@@ -1,0 +1,18 @@
+[package]
+name = "windvg"
+version = "0.1.0"
+edition = "2021"
+description = "Parser, resolver, and TinyVG/SVG renderer for the .wvg vector language"
+license = "MIT"
+
+[lib]
+name = "windvg"
+path = "src/lib.rs"
+
+[[bin]]
+name = "windvg"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1

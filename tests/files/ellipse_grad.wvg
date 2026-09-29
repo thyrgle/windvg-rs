@@ -1,0 +1,5 @@
+wvg 1
+scene 120 120
+
+fill e = ellipse center=(60,60) rx=50 ry=25 rotation_deg=30
+  color=linear start=(0,0) end=(120,120) start_color=#ff0000 end_color=#00ff00

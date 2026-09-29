@@ -1,0 +1,7 @@
+wvg 1
+scene 100 100
+
+fill p = path subpaths=[
+  { start=(10,10), line to=(90,10), line to=(50,90), close },
+  { start=(40,40), line to=(60,40), line to=(50,60), close }
+] color=cyan

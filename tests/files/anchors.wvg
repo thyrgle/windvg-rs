@@ -1,0 +1,14 @@
+wvg 1
+scene 230 200
+
+fill box = polygon points=[(20,50), (120,50), (120,150), (20,150)] color=#4073cc
+
+guide ring = circle center=(160,100) radius=35
+
+stroke tie = line p1=@box 25% p2=@ring ccw 60% from (160,135) color=#111111 width=2
+
+fill dot = circle center=@lattice[2,1] + (5,-5) radius=4 color=red
+
+guide lattice = grid origin=(0,0) cols=6 rows=5 dx=40 dy=40
+
+fill hub = circle center=(160,100) radius=8 color=blue
