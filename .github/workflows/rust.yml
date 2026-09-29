@@ -1,0 +1,73 @@
+name: Rust CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust (stable, with rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets
+
+      # Includes the golden tests: committed .tvg expectations generated
+      # from the Python reference must match byte-for-byte.
+      - name: Tests
+        run: cargo test
+
+  # Regenerates the golden expectations live from the Python reference and
+  # requires the Rust CLI to match byte-for-byte. Runs only when a sibling
+  # `windvg` repository exists under the same owner (checked out without
+  # credentials, so it must be public).
+  python-cross-check:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect sibling windvg repository
+        id: detect
+        run: |
+          if git ls-remote --exit-code "https://github.com/${GITHUB_REPOSITORY_OWNER}/windvg.git" HEAD > /dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "no sibling windvg repository; skipping Python cross-check"
+          fi
+
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/windvg
+          path: windvg-py
+
+      - if: steps.detect.outputs.present == 'true'
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - if: steps.detect.outputs.present == 'true'
+        name: Build Rust CLI
+        run: cargo build --release
+
+      - if: steps.detect.outputs.present == 'true'
+        name: Byte-exact cross-check against Python reference
+        run: >
+          uv run --project windvg-py
+          python scripts/check_conformance.py
+          --rust-bin target/release/windvg
+          --sources tests/files
