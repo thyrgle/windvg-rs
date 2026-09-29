@@ -1,0 +1,8 @@
+// v3: symbol defs with use, one through a transform
+wvg 3
+scene 200 200
+
+def tooth = polygon points=[(-6,-2), (6,-2), (9,-15), (-9,-15)]
+
+fill t1 = use tooth color=#31465e
+fill t2 = use tooth transform=translate 30 0 color=#31465e

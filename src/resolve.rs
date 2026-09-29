@@ -988,6 +988,7 @@ struct Env<'a> {
     by_name: HashMap<&'a str, usize>,
     memo: Vec<Option<Rc<Vec<RShape>>>>,
     in_progress: HashSet<usize>,
+    def_stack: HashSet<String>,
 }
 
 impl<'a> Env<'a> {
@@ -1003,6 +1004,7 @@ impl<'a> Env<'a> {
             by_name,
             memo: (0..doc.nodes.len()).map(|_| None).collect(),
             in_progress: HashSet::new(),
+            def_stack: HashSet::new(),
         }
     }
 
@@ -1055,6 +1057,7 @@ impl<'a> Env<'a> {
                 pct,
                 start,
                 dir,
+                offset,
             } => {
                 let shape = self.first_shape(node, p.span)?;
                 let wrap = |e: String| Diag::new(e, p.span.line, p.span.col);
@@ -1065,9 +1068,18 @@ impl<'a> Env<'a> {
                 let d0 = shape.project(hint).map_err(wrap)?;
                 let signed = dir.mult() * shape.winding_sign() as f64;
                 let delta = (pct / 100.0) * shape.perimeter() * signed;
-                shape.point_at_distance(d0 + delta).map_err(wrap)
+                let mut result = shape.point_at_distance(d0 + delta).map_err(wrap)?;
+                if let Some((dx, dy)) = offset {
+                    result = Pt::new(result.x + dx, result.y + dy);
+                }
+                Ok(result)
             }
-            PKind::Segment { node, index, pct } => {
+            PKind::Segment {
+                node,
+                index,
+                pct,
+                offset,
+            } => {
                 let shape = self.first_shape(node, p.span)?;
                 let pts = match &shape {
                     RShape::Polygon(pts) | RShape::Polyline(pts) => pts.clone(),
@@ -1098,13 +1110,30 @@ impl<'a> Env<'a> {
                 let a = pts[*index as usize];
                 let b = pts[((*index as usize) + 1) % pts.len()];
                 let t = pct.clamp(0.0, 100.0) / 100.0;
-                Ok(a.lerp(b, t))
+                let mut result = a.lerp(b, t);
+                if let Some((dx, dy)) = offset {
+                    result = Pt::new(result.x + dx, result.y + dy);
+                }
+                Ok(result)
             }
-            PKind::Between { a, b, pct } => {
+            PKind::Between { a, b, pct, offset } => {
                 let pa = self.resolve_point(a)?;
                 let pb = self.resolve_point(b)?;
                 let t = pct / 100.0;
-                Ok(Pt::new(pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t))
+                let mut result = Pt::new(pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t);
+                if let Some((dx, dy)) = offset {
+                    result = Pt::new(result.x + dx, result.y + dy);
+                }
+                Ok(result)
+            }
+            PKind::Polar {
+                center,
+                radius,
+                deg,
+            } => {
+                let c = self.resolve_point(center)?;
+                let rad = deg.to_radians();
+                Ok(Pt::new(c.x + radius * rad.cos(), c.y + radius * rad.sin()))
             }
             PKind::GridCell {
                 node,
@@ -1342,6 +1371,21 @@ impl<'a> Env<'a> {
                     instructions: instrs,
                 }])])
             }
+            SKind::Use { def_name } => {
+                let def_shape = self
+                    .doc
+                    .defs
+                    .iter()
+                    .find(|(n, _)| n == def_name)
+                    .map(|(_, sp)| sp.clone())
+                    .ok_or_else(|| err(format!("unknown def {def_name:?}")))?;
+                if !self.def_stack.insert(def_name.clone()) {
+                    return Err(err(format!("cyclic def chain involving {def_name:?}")));
+                }
+                let result = self.expand_shape(&def_shape);
+                self.def_stack.remove(def_name);
+                result
+            }
             SKind::Rounded { shape, radius } => {
                 let inner = self.expand_shape(shape)?;
                 if inner.len() != 1 {
@@ -1480,6 +1524,58 @@ fn rounded_polygon(points: &[Pt], radius: f64) -> Result<RShape, String> {
     }]))
 }
 
+// ---- marker geometry (spec §7.18) ---------------------------------------------
+
+fn marker_polygons(shape: &RShape, marker: &Marker) -> Result<Vec<Vec<Pt>>, String> {
+    match marker.placement.as_str() {
+        "start" | "end" | "both" => {}
+        other => return Err(format!("unknown marker placement {other:?}")),
+    }
+    match marker.kind.as_str() {
+        "triangle" | "bar" => {}
+        other => return Err(format!("unknown marker kind {other:?}")),
+    }
+    if marker.size <= 0.0 {
+        return Err("marker size must be positive".into());
+    }
+    let per = shape.perimeter();
+    let ds: Vec<f64> = match marker.placement.as_str() {
+        "start" => vec![0.0],
+        "end" => vec![per],
+        _ => vec![0.0, per],
+    };
+    let mut out = Vec::new();
+    for d in ds {
+        let p = shape.point_at_distance(d).map_err(|e| e.to_string())?;
+        let t = shape.tangent_at_distance(d).map_err(|e| e.to_string())?;
+        let n = Pt::new(t.y, -t.x);
+        let sz = marker.size;
+        if marker.kind == "triangle" {
+            out.push(vec![
+                p,
+                Pt::new(
+                    p.x - t.x * sz + n.x * 0.4 * sz,
+                    p.y - t.y * sz + n.y * 0.4 * sz,
+                ),
+                Pt::new(
+                    p.x - t.x * sz - n.x * 0.4 * sz,
+                    p.y - t.y * sz - n.y * 0.4 * sz,
+                ),
+            ]);
+        } else {
+            let (hx, hy) = (t.x * sz / 2.0, t.y * sz / 2.0);
+            let (qx, qy) = (n.x * sz / 10.0, n.y * sz / 10.0);
+            out.push(vec![
+                Pt::new(p.x + hx + qx, p.y + hy + qy),
+                Pt::new(p.x + hx - qx, p.y + hy - qy),
+                Pt::new(p.x - hx - qx, p.y - hy - qy),
+                Pt::new(p.x - hx + qx, p.y - hy + qy),
+            ]);
+        }
+    }
+    Ok(out)
+}
+
 // ---- ops ---------------------------------------------------------------------
 
 pub fn resolve_paint(p: &Paint) -> RPaint {
@@ -1517,6 +1613,13 @@ pub fn resolve(doc: &Document) -> Result<Vec<ROp>, Diag> {
         if !node.visible {
             continue;
         }
+        if !node.markers.is_empty() && node.op != OpKind::Stroke {
+            return Err(Diag::new(
+                format!("markers are only valid on stroke nodes ({})", node.name),
+                node.span.line,
+                node.span.col,
+            ));
+        }
         let shapes = env.node_shapes(idx)?;
         for shape in shapes.iter() {
             if node.op == OpKind::Fill && !shape.fillable() {
@@ -1543,6 +1646,26 @@ pub fn resolve(doc: &Document) -> Result<Vec<ROp>, Diag> {
                 outline_paint: node.outline_paint.as_ref().map(resolve_paint),
                 width: node.stroke_width,
             });
+            if node.op == OpKind::Stroke {
+                for marker in &node.markers {
+                    for polygon in marker_polygons(shape, marker)
+                        .map_err(|e| Diag::new(e, node.span.line, node.span.col))?
+                    {
+                        ops.push(ROp {
+                            id: node.id.clone(),
+                            kind: OpKind::Fill,
+                            shape: RShape::Polygon(polygon),
+                            paint: marker
+                                .paint
+                                .as_ref()
+                                .map(resolve_paint)
+                                .unwrap_or_else(|| resolve_paint(&node.paint)),
+                            outline_paint: None,
+                            width: 1.0,
+                        });
+                    }
+                }
+            }
         }
     }
     Ok(ops)

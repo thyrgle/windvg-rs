@@ -1,0 +1,10 @@
+// v3: point offsets on anchor, between, and grid references
+wvg 3
+scene 220 200
+
+guide g = circle center=(60,100) radius=40
+guide lattice = grid origin=(140,40) cols=4 rows=3 dx=40 dy=40
+
+fill off = circle center=@g 25% + (10, 0) radius=5 color=#e53935
+fill blend = circle center=between (20,20) (60,20) 50% + (0, 30) radius=4 color=#1e88e5
+fill cell = circle center=@lattice[2,1] + (4, -4) radius=3 color=#43a047

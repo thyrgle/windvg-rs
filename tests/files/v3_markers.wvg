@@ -1,0 +1,12 @@
+// v3: stroke markers — triangle end, bar both, marker paint
+wvg 3
+scene 200 200
+
+stroke tie = line p1=(40,40) p2=(40,160) color=#333333 width=2
+  marker = end triangle 12
+
+stroke rail = line p1=(80,40) p2=(160,40) color=#1e88e5 width=2
+  marker = both bar 8
+
+stroke dim = line p1=(180,40) p2=(180,160) color=#e53935 width=1.5
+  marker = both triangle 10 #43a047

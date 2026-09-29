@@ -253,22 +253,30 @@ pub enum PKind {
         pct: f64,
         start: Option<(f64, f64)>,
         dir: Orientation,
+        offset: Option<(f64, f64)>,
     },
     Segment {
         node: String,
         index: i64,
         pct: f64,
+        offset: Option<(f64, f64)>,
     },
     Between {
         a: Box<PPoint>,
         b: Box<PPoint>,
         pct: f64,
+        offset: Option<(f64, f64)>,
     },
     GridCell {
         node: String,
         col: i64,
         row: i64,
         offset: Option<(f64, f64)>,
+    },
+    Polar {
+        center: Box<PPoint>,
+        radius: f64,
+        deg: f64,
     },
 }
 
@@ -387,6 +395,9 @@ pub enum SKind {
         shape: Box<PShape>,
         radius: f64,
     },
+    Use {
+        def_name: String,
+    },
     Rect {
         center: PPoint,
         width: f64,
@@ -438,7 +449,16 @@ pub struct Node {
     pub paint: Paint,
     pub stroke_width: f64,
     pub outline_paint: Option<Paint>,
+    pub markers: Vec<Marker>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Marker {
+    pub placement: String, // start | end | both
+    pub kind: String,      // triangle | bar
+    pub size: f64,
+    pub paint: Option<Paint>,
 }
 
 #[derive(Debug, Clone)]
@@ -446,4 +466,5 @@ pub struct Document {
     pub width: f64,
     pub height: f64,
     pub nodes: Vec<Node>,
+    pub defs: Vec<(String, PShape)>,
 }

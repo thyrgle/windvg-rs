@@ -18,6 +18,7 @@ struct Parser {
     pos: usize,
     paints: HashMap<String, Paint>,
     names: HashSet<String>,
+    defs: HashMap<String, PShape>,
 }
 
 impl Parser {
@@ -27,6 +28,7 @@ impl Parser {
             pos: 0,
             paints: HashMap::new(),
             names: HashSet::new(),
+            defs: HashMap::new(),
         }
     }
 
@@ -159,7 +161,7 @@ impl Parser {
     fn parse_file(&mut self) -> Result<Document, Diag> {
         self.keyword("wvg")?;
         let version = self.integer()?;
-        if version != 1 && version != 2 {
+        if version != 1 && version != 2 && version != 3 {
             let t = self.toks[self.pos - 1].clone();
             return Err(Diag::new(
                 format!("unsupported format version {version}"),
@@ -188,6 +190,7 @@ impl Parser {
                     "fill" | "stroke" | "outline_fill" => nodes.push(self.parse_node()?),
                     "guide" => nodes.push(self.parse_guide()?),
                     "group" => self.parse_group(&mut nodes)?,
+                    "def" => self.parse_def()?,
                     "scene" => return Err(self.err_here("duplicate scene declaration")),
                     _ => return Err(self.err_here("expected a statement")),
                 },
@@ -198,6 +201,7 @@ impl Parser {
             width,
             height,
             nodes,
+            defs: self.defs.drain().collect(),
         })
     }
 
@@ -378,11 +382,64 @@ impl Parser {
                 ));
             }
         }
+        let mut markers: Vec<Marker> = Vec::new();
+        if op != OpKind::Fill && self.peek_kw("marker") {
+            self.keyword("marker")?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+            let placement = match self.next().tok {
+                Tok::Ident(ref s) if s == "start" || s == "end" || s == "both" => s.clone(),
+                ref other => {
+                    return Err(Diag::new(
+                        format!("expected marker placement, found {other:?}"),
+                        name_span.line,
+                        name_span.col,
+                    ))
+                }
+            };
+            let kind = match self.next().tok {
+                Tok::Ident(ref s) if s == "triangle" || s == "bar" => s.clone(),
+                ref other => {
+                    return Err(Diag::new(
+                        format!("expected marker kind, found {other:?}"),
+                        name_span.line,
+                        name_span.col,
+                    ))
+                }
+            };
+            let size = self.number()?;
+            if size <= 0.0 {
+                return Err(Diag::new(
+                    "marker size must be positive",
+                    name_span.line,
+                    name_span.col,
+                ));
+            }
+            let marker_paint = if matches!(self.peek().tok, Tok::Hex(_))
+                || self.peek_kw("rgb")
+                || self.peek_kw("rgba")
+                || matches!(self.peek().tok, Tok::Ident(ref s) if named_color(s).is_some())
+            {
+                Some(self.parse_paint_value()?)
+            } else {
+                None
+            };
+            markers.push(Marker {
+                placement,
+                kind,
+                size,
+                paint: marker_paint,
+            });
+        }
         let mut visible = true;
         if self.peek_kw("hidden") {
             self.keyword("hidden")?;
             visible = false;
         }
+        let markers_opt = if markers.is_empty() {
+            None
+        } else {
+            Some(markers)
+        };
         Ok(Node {
             id: String::new(), // assigned after parsing completes
             name,
@@ -392,6 +449,7 @@ impl Parser {
             paint,
             stroke_width,
             outline_paint,
+            markers: markers_opt.unwrap_or_default(),
             span: Span::new(kw.line, kw.col),
         })
     }
@@ -429,6 +487,16 @@ impl Parser {
             node.shape = compose_group_transform(group_t, node.shape);
             nodes.push(node);
         }
+        Ok(())
+    }
+
+    /// `def name = shape` — document-scope named shape (spec §7.17).
+    fn parse_def(&mut self) -> Result<(), Diag> {
+        self.keyword("def")?;
+        let (name, _) = self.bind_name("def")?;
+        self.expect("`=`", |t| *t == Tok::Eq)?;
+        let shape = self.parse_shape()?;
+        self.defs.insert(name, shape);
         Ok(())
     }
 
@@ -527,6 +595,7 @@ impl Parser {
                 paint: Paint::Color(Color::rgb(0.0, 0.0, 0.0)),
                 stroke_width: 1.0,
                 outline_paint: None,
+                markers: Vec::new(),
                 span: Span::new(kw.line, kw.col),
             });
         }
@@ -580,6 +649,7 @@ impl Parser {
             paint: Paint::Color(Color::rgb(0.0, 0.0, 0.0)),
             stroke_width: 1.0,
             outline_paint: None,
+            markers: Vec::new(),
             span: Span::new(kw.line, kw.col),
         })
     }
@@ -620,8 +690,19 @@ impl Parser {
                     } else {
                         0.0
                     };
+                    let offset = if self.peek().tok == Tok::Plus {
+                        self.next();
+                        Some(self.literal()?.1)
+                    } else {
+                        None
+                    };
                     return Ok(PPoint {
-                        kind: PKind::Segment { node, index, pct },
+                        kind: PKind::Segment {
+                            node,
+                            index,
+                            pct,
+                            offset,
+                        },
                         span,
                     });
                 }
@@ -663,12 +744,38 @@ impl Parser {
                     self.keyword("from")?;
                     start = Some(self.literal()?.1);
                 }
+                let offset = if self.peek().tok == Tok::Plus {
+                    self.next();
+                    Some(self.literal()?.1)
+                } else {
+                    None
+                };
                 Ok(PPoint {
                     kind: PKind::Anchor {
                         node,
                         pct,
                         start,
                         dir,
+                        offset,
+                    },
+                    span,
+                })
+            }
+            Tok::Ident(ref s) if s == "polar" => {
+                self.keyword("center")?;
+                self.expect("`=`", |t| *t == Tok::Eq)?;
+                let center = Box::new(self.parse_point()?);
+                self.keyword("radius")?;
+                self.expect("`=`", |t| *t == Tok::Eq)?;
+                let radius = self.number()?;
+                self.keyword("deg")?;
+                self.expect("`=`", |t| *t == Tok::Eq)?;
+                let deg = self.number()?;
+                Ok(PPoint {
+                    kind: PKind::Polar {
+                        center,
+                        radius,
+                        deg,
                     },
                     span,
                 })
@@ -677,8 +784,14 @@ impl Parser {
                 let a = Box::new(self.parse_point()?);
                 let b = Box::new(self.parse_point()?);
                 let pct = self.percent()?;
+                let offset = if self.peek().tok == Tok::Plus {
+                    self.next();
+                    Some(self.literal()?.1)
+                } else {
+                    None
+                };
                 Ok(PPoint {
-                    kind: PKind::Between { a, b, pct },
+                    kind: PKind::Between { a, b, pct, offset },
                     span,
                 })
             }
@@ -1091,6 +1204,20 @@ impl Parser {
                     sweep_deg,
                     chord,
                 }
+            }
+            "use" => {
+                let nt = self.next();
+                let def_name = match nt.tok {
+                    Tok::Ident(ref s) => s.clone(),
+                    _ => {
+                        return Err(Diag::new(
+                            format!("expected a def name, found {}", nt.describe()),
+                            nt.line,
+                            nt.col,
+                        ))
+                    }
+                };
+                SKind::Use { def_name }
             }
             "rounded" => {
                 self.keyword("shape")?;

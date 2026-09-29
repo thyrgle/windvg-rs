@@ -80,6 +80,7 @@ fn point_json(p: &PPoint) -> String {
             pct,
             start,
             dir,
+            offset,
         } => {
             let mut s = format!("{{\"anchor\": {{\"node\": \"{node}\", \"pct\": {}", f(*pct));
             if let Some((x, y)) = start {
@@ -88,18 +89,50 @@ fn point_json(p: &PPoint) -> String {
             if *dir != Orientation::Cw {
                 s.push_str(&format!(", \"direction\": \"{}\"", dir.as_str()));
             }
+            if let Some((x, y)) = offset {
+                s.push_str(&format!(", \"offset\": {}", num_list((*x, *y))));
+            }
             s.push_str("}}");
             s
         }
-        PKind::Segment { node, index, pct } => format!(
-            "{{\"segment\": {{\"node\": \"{node}\", \"index\": {index}, \"pct\": {}}}}}",
-            f(*pct)
-        ),
-        PKind::Between { a, b, pct } => format!(
-            "{{\"between\": {{\"a\": {}, \"b\": {}, \"pct\": {}}}}}",
-            point_json(a),
-            point_json(b),
-            f(*pct)
+        PKind::Segment {
+            node,
+            index,
+            pct,
+            offset,
+        } => {
+            let mut s = format!(
+                "{{\"segment\": {{\"node\": \"{node}\", \"index\": {index}, \"pct\": {}",
+                f(*pct)
+            );
+            if let Some((x, y)) = offset {
+                s.push_str(&format!(", \"offset\": {}", num_list((*x, *y))));
+            }
+            s.push_str("}}}");
+            s
+        }
+        PKind::Between { a, b, pct, offset } => {
+            let mut s = format!(
+                "{{\"between\": {{\"a\": {}, \"b\": {}, \"pct\": {}",
+                point_json(a),
+                point_json(b),
+                f(*pct)
+            );
+            if let Some((x, y)) = offset {
+                s.push_str(&format!(", \"offset\": {}", num_list((*x, *y))));
+            }
+            s.push_str("}}}");
+            s
+        }
+        PKind::Polar {
+            center,
+            radius,
+            deg,
+        } => format!(
+            "{{\"polar\": {{\"center\": {}, \"radius\": {}, \"deg\": {}}}}}",
+            point_json(center),
+            f(*radius),
+            f(*deg)
         ),
         PKind::GridCell {
             node,
@@ -214,6 +247,9 @@ fn shape_json(s: &PShape) -> String {
             shape_json(shape),
             f(*radius)
         ),
+        SKind::Use { def_name } => {
+            format!("{{\"kind\": \"use\", \"def\": \"{def_name}\"}}")
+        }
         SKind::Rect { center, width, height } => format!(
             "{{\"kind\": \"rect\", \"center\": {}, \"size\": [{}, {}]}}",
             point_json(center),
@@ -297,15 +333,47 @@ pub fn document_json(doc: &Document) -> String {
             if let Some(o) = &n.outline_paint {
                 s.push_str(&format!(", \"outline_paint\": {}", paint_json(o)));
             }
+            if !n.markers.is_empty() {
+                let marker_strs: Vec<String> = n
+                    .markers
+                    .iter()
+                    .map(|m| {
+                        let paint_str = match &m.paint {
+                            Some(p) => format!(", \"paint\": {}", paint_json(p)),
+                            None => String::new(),
+                        };
+                        format!(
+                            "{{\"placement\": \"{}\", \"kind\": \"{}\", \"size\": {}}}",
+                            m.placement, m.kind, f(m.size)
+                        ) + &paint_str
+                            + "}"
+                    })
+                    .collect();
+                s.push_str(&format!(
+                    ", \"markers\": [{}]",
+                    marker_strs.join(", ")
+                ));
+            }
             s.push('}');
             s
         })
         .collect();
+    let defs = if doc.defs.is_empty() {
+        String::new()
+    } else {
+        let items: Vec<String> = doc
+            .defs
+            .iter()
+            .map(|(n, sp)| format!("\"{n}\": {}", shape_json(sp)))
+            .collect();
+        format!(", \"defs\": {{{}}}", items.join(", "))
+    };
     format!(
-        "{{\"version\": 1, \"canvas\": [{}, {}], \"nodes\": [{}]}}",
+        "{{\"version\": 1, \"canvas\": [{}, {}], \"nodes\": [{}]}}{}",
         f(doc.width),
         f(doc.height),
-        nodes.join(", ")
+        nodes.join(", "),
+        defs
     )
 }
 

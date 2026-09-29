@@ -262,6 +262,52 @@ def build_v2_between():
     return doc.resolve()
 
 
+def build_v3_offset():
+    doc = Document(220.0, 200.0)
+    doc.fill("g", wv.Circle((60, 100), 40), wv.BLACK, visible=False)
+    doc.fill("lattice", wvd.GridGuideSpec(origin=(140.0, 40.0), cols=4, rows=3, dx=40.0, dy=40.0),
+             wv.BLACK, visible=False)
+    doc.fill("off", wvd.CircleSpec(
+        wvd.AnchorPoint("g", pct=25.0, offset=(10.0, 0.0)), 5.0), _hex("E53935"))
+    doc.fill("blend", wvd.CircleSpec(
+        wvd.BetweenPoint((20.0, 20.0), (60.0, 20.0), 50.0, offset=(0.0, 30.0)), 4.0), _hex("1E88E5"))
+    doc.fill("cell", wvd.CircleSpec(
+        wvd.GridCellPoint("lattice", 2, 1, offset=(4.0, -4.0)), 3.0), _hex("43A047"))
+    return doc.resolve()
+
+
+def build_v3_polar():
+    doc = Document(200.0, 200.0)
+    doc.fill("g", wv.Circle((100, 100), 40), wv.BLACK, visible=False)
+    doc.fill("planet1", wvd.CircleSpec(
+        wvd.PolarPoint((100.0, 100.0), 70.0, 30.0), 5.0), _hex("E53935"))
+    doc.fill("planet2", wvd.CircleSpec(
+        wvd.PolarPoint(wvd.AnchorPoint("g", pct=0.0), 55.0, 30.0), 8.0), _hex("1E88E5"))
+    return doc.resolve()
+
+
+def build_v3_defs():
+    doc = Document(200.0, 200.0)
+    doc.define("tooth", wvd.PolySpec(closed=True, points=(
+        (-6.0, -2.0), (6.0, -2.0), (9.0, -15.0), (-9.0, -15.0))))
+    doc.fill("t1", wvd.UseSpec("tooth"), _hex("31465E"))
+    doc.fill("t2", wvd.TransformSpec(
+        (1.0, 0.0, 0.0, 1.0, 30.0, 0.0), wvd.UseSpec("tooth")), _hex("31465E"))
+    return doc.resolve()
+
+
+def build_v3_markers():
+    doc = Document(200.0, 200.0)
+    doc.stroke("tie", wvd.PolySpec(closed=False, points=((40.0, 40.0), (40.0, 160.0))),
+               _hex("333333"), 2.0, markers=[wvd.Marker("end", "triangle", 12.0)])
+    doc.stroke("rail", wvd.PolySpec(closed=False, points=((80.0, 40.0), (160.0, 40.0))),
+               _hex("1E88E5"), 2.0, markers=[wvd.Marker("both", "bar", 8.0)])
+    doc.stroke("dim", wvd.PolySpec(closed=False, points=((180.0, 40.0), (180.0, 160.0))),
+               _hex("E53935"), 1.5,
+               markers=[wvd.Marker("both", "triangle", 10.0, _hex("43A047"))])
+    return doc.resolve()
+
+
 BUILDERS = {
     "smoke": build_smoke,
     "anchors": build_anchors,
@@ -272,4 +318,8 @@ BUILDERS = {
     "v2_group": build_v2_group,
     "v2_rect_pie": build_v2_rect_pie,
     "v2_between": build_v2_between,
+    "v3_offset": build_v3_offset,
+    "v3_polar": build_v3_polar,
+    "v3_defs": build_v3_defs,
+    "v3_markers": build_v3_markers,
 }

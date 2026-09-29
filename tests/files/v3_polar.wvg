@@ -1,0 +1,8 @@
+// v3: polar points, including an anchor center
+wvg 3
+scene 200 200
+
+guide g = circle center=(100,100) radius=40
+
+fill planet1 = circle center=polar center=(100,100) radius=70 deg=30 radius=5 color=#e53935
+fill planet2 = circle center=polar center=@g 0% radius=55 deg=30 radius=8 color=#1e88e5
