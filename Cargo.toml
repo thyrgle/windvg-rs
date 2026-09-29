@@ -3,7 +3,7 @@ name = "windvg"
 version = "0.1.0"
 edition = "2021"
 description = "Parser, resolver, and TinyVG/SVG renderer for the .wvg vector language"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "windvg"
