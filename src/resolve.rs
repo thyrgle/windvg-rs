@@ -1100,6 +1100,12 @@ impl<'a> Env<'a> {
                 let t = pct.clamp(0.0, 100.0) / 100.0;
                 Ok(a.lerp(b, t))
             }
+            PKind::Between { a, b, pct } => {
+                let pa = self.resolve_point(a)?;
+                let pb = self.resolve_point(b)?;
+                let t = pct / 100.0;
+                Ok(Pt::new(pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t))
+            }
             PKind::GridCell {
                 node,
                 col,
@@ -1278,6 +1284,63 @@ impl<'a> Env<'a> {
                     }
                 }
                 Ok(out)
+            }
+            SKind::Transform { t, shape } => {
+                let t = Transform {
+                    a: t[0],
+                    b: t[1],
+                    c: t[2],
+                    d: t[3],
+                    e: t[4],
+                    f: t[5],
+                };
+                let inner = self.expand_shape(shape)?;
+                Ok(inner.into_iter().map(|s| transform_shape(s, &t)).collect())
+            }
+            SKind::Rect {
+                center,
+                width,
+                height,
+            } => {
+                let c = self.resolve_point(center)?;
+                let (hw, hh) = (width / 2.0, height / 2.0);
+                let pts = vec![
+                    Pt::new(c.x - hw, c.y - hh),
+                    Pt::new(c.x + hw, c.y - hh),
+                    Pt::new(c.x + hw, c.y + hh),
+                    Pt::new(c.x - hw, c.y + hh),
+                ];
+                if polygon_shoelace(&pts) == 0.0 {
+                    return Err(err("degenerate polygon (zero signed area)".into()));
+                }
+                Ok(vec![RShape::Polygon(pts)])
+            }
+            SKind::Pie {
+                center,
+                radius,
+                start_deg,
+                sweep_deg,
+                chord,
+            } => {
+                let c = self.resolve_point(center)?;
+                let rad0 = start_deg.to_radians();
+                let rad1 = (start_deg + sweep_deg).to_radians();
+                let start = Pt::new(c.x + radius * rad0.cos(), c.y + radius * rad0.sin());
+                let end = Pt::new(c.x + radius * rad1.cos(), c.y + radius * rad1.sin());
+                let mut instrs = vec![RInstr::ArcCircle {
+                    radius: *radius,
+                    large: sweep_deg.abs() > 180.0,
+                    sweep_cw: *sweep_deg > 0.0,
+                    to: end,
+                }];
+                if !chord {
+                    instrs.push(RInstr::Line { to: c });
+                }
+                instrs.push(RInstr::Close);
+                Ok(vec![make_path(vec![RSubPath {
+                    start,
+                    instructions: instrs,
+                }])])
             }
             SKind::Rounded { shape, radius } => {
                 let inner = self.expand_shape(shape)?;

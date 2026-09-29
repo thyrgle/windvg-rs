@@ -305,3 +305,101 @@ stroke m = line p1=@g 25% p2=(999,999) color=black width=1
     let (x, y) = first_point(&ops[0]);
     assert!(approx(x, 50.0) && approx(y, 50.0));
 }
+
+// ---- v2 constructs ---------------------------------------------------------
+
+#[test]
+fn v2_transforms_parse_and_version_two_is_accepted() {
+    let src = "wvg 2\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 transform=rotate 45 about (5,5) color=red\n";
+    let ops = resolve_src(src).unwrap();
+    match &ops[0].shape {
+        RShape::Circle { c, .. } => {
+            // (0,0) rotated 45° about (5,5) lands at (2.07, 2.07)
+            assert!(
+                (c.x - 2.071).abs() < 1e-2 && (c.y - 2.071).abs() < 1e-2,
+                "{c:?}"
+            );
+        }
+        _ => panic!("expected a circle"),
+    }
+    // v1 files remain valid
+    resolve_src("wvg 1\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
+    // v3 is rejected
+    assert!(resolve_src("wvg 3\nscene 10 10\n").is_err());
+}
+
+#[test]
+fn v2_group_composes_transforms() {
+    // group translate(40,20) ∘ child scale(1.2): circle center (60,60)
+    // resolves to (40 + 72, 20 + 72) = (112, 92)
+    let src = "
+wvg 2
+scene 200 200
+
+group transform=translate 40 20 {
+  fill a = circle center=(60,60) radius=25 transform=scale 1.2 color=red
+}
+";
+    let ops = resolve_src(src).unwrap();
+    match &ops[0].shape {
+        RShape::Circle { c, r } => {
+            assert!(
+                (c.x - 112.0).abs() < 1e-9 && (c.y - 92.0).abs() < 1e-9,
+                "{c:?}"
+            );
+            assert!((r - 30.0).abs() < 1e-9);
+        }
+        _ => panic!("expected a circle"),
+    }
+}
+
+#[test]
+fn v2_rect_pie_chord_resolve() {
+    let src = "
+wvg 2
+scene 200 200
+
+fill box = rect center=(50,50) size=(40,20) color=red
+fill wedge = pie center=(100,50) radius=30 start_deg=0 sweep_deg=90 color=blue
+fill lid = chord center=(100,120) radius=30 start_deg=0 sweep_deg=90 color=cyan
+";
+    let ops = resolve_src(src).unwrap();
+    match &ops[0].shape {
+        RShape::Polygon(pts) => {
+            assert!((pts[0].x - 30.0).abs() < 1e-9 && (pts[0].y - 40.0).abs() < 1e-9);
+        }
+        _ => panic!("rect resolves to a polygon"),
+    }
+    for (op, sub_count) in [(1, 3usize), (2, 2usize)] {
+        match &ops[op].shape {
+            RShape::Path { subpaths, .. } => {
+                assert_eq!(subpaths.len(), 1);
+                assert_eq!(subpaths[0].instructions.len(), sub_count);
+            }
+            _ => panic!("pie/chord resolve to paths"),
+        }
+    }
+}
+
+#[test]
+fn v2_between_resolves_and_extrapolates() {
+    let src = "
+wvg 2
+scene 100 100
+
+fill a = circle center=between (10,10) (30,30) 50% radius=2 color=red
+fill b = circle center=between (10,10) (30,30) 150% radius=2 color=blue
+";
+    let ops = resolve_src(src).unwrap();
+    for (op, want) in [(0, (20.0, 20.0)), (1, (40.0, 40.0))] {
+        match &ops[op].shape {
+            RShape::Circle { c, .. } => {
+                assert!(
+                    (c.x - want.0).abs() < 1e-9 && (c.y - want.1).abs() < 1e-9,
+                    "{c:?}"
+                );
+            }
+            _ => panic!("expected a circle"),
+        }
+    }
+}

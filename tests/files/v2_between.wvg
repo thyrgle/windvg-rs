@@ -1,0 +1,14 @@
+// v2: between points — nested anchors, literals, extrapolation
+wvg 2
+scene 200 200
+
+guide a = circle center=(50,50) radius=30
+guide b = circle center=(150,50) radius=30
+
+fill mid = circle center=between @a 0% @b 0% 50% radius=12 color=#fdd835
+fill lerp = polygon points=[
+  between (20,20) (100,160) 50%,
+  between (180,180) (180,20) 25%,
+  between (60,90) (180,180) 50%
+] color=#7fd1c0
+fill ext = circle center=between @a 0% @b 0% 125% radius=4 color=#e53935

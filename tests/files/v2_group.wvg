@@ -1,0 +1,10 @@
+// v2: groups compose their transform onto each child's own
+wvg 2
+scene 200 200
+
+group transform=translate 40 20 {
+  fill a = circle center=(60,60) radius=25 transform=scale 1.2 color=#8e24aa
+  stroke b = line p1=(20,60) p2=(100,60) color=#ff9aa2 width=3
+}
+
+fill c = rect center=(100,160) size=(60,24) color=#00897b

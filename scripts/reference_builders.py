@@ -143,10 +143,133 @@ def build_path_hole():
     return scene
 
 
+# ---- v2 goldens: transforms, groups, rect/pie/chord, between -----------------
+
+def build_v2_transform():
+    import windvg.document as wvd
+    from windvg.ext.transform import Transform
+
+    doc = Document(200.0, 200.0)
+    doc.fill("g", wv.Circle((100, 100), 60), wv.BLACK, visible=False)
+
+    def spec(t: Transform, shape):
+        return wvd.TransformSpec((t.a, t.b, t.c, t.d, t.e, t.f), shape)
+
+    doc.fill("moved", spec(
+        Transform.translate(40, 15), wvd.CircleSpec((100.0, 100.0), 25.0),
+    ), _hex("E53935"))
+    doc.fill("spun", spec(
+        Transform.rotate(45, (100, 100)),
+        wvd.PolySpec(closed=True, points=(
+            (90.0, 90.0), (110.0, 90.0), (110.0, 110.0), (90.0, 110.0),
+        )),
+    ), _hex("43A047"))
+    doc.fill("grown", spec(
+        Transform.scale(1.5, 1, (160, 50)),
+        wvd.EllipseSpec((160.0, 50.0), 20.0, 10.0),
+    ), _hex("1E88E5"))
+    return doc.resolve()
+
+
+def build_v2_group():
+    import windvg.document as wvd
+    from windvg.ext.transform import Transform
+
+    doc = Document(200.0, 200.0)
+    # group translate(40,20) composed onto child scale(1.2)
+    group_t = Transform.translate(40, 20)
+    child_t = Transform.scale(1.2, 1.2)
+    combined = group_t @ child_t
+    doc.fill(
+        "a",
+        wvd.TransformSpec(
+            (combined.a, combined.b, combined.c, combined.d, combined.e, combined.f),
+            wvd.CircleSpec((60.0, 60.0), 25.0),
+        ),
+        _hex("8E24AA"),
+    )
+    # stroke child has no own transform: group transform alone
+    doc.stroke("b", wvd.TransformSpec(
+        (group_t.a, group_t.b, group_t.c, group_t.d, group_t.e, group_t.f),
+        wvd.PolySpec(closed=False, points=((20.0, 60.0), (100.0, 60.0))),
+    ), _hex("FF9AA2"), 3.0)
+    doc.fill("c", wvd.RectSpec((100.0, 160.0), 60.0, 24.0), _hex("00897B"))
+    return doc.resolve()
+
+
+def build_v2_rect_pie():
+    import windvg.document as wvd
+
+    doc = Document(220.0, 200.0)
+    doc.fill("g", wv.Circle((60, 60), 40), wv.BLACK, visible=False)
+    doc.fill(
+        "box",
+        wvd.RectSpec(wvd.AnchorPoint("g", pct=25.0), 50.0, 30.0),
+        _hex("FB8C00"),
+    )
+    doc.fill(
+        "wedge",
+        wvd.PieSpec((150.0, 60.0), 40.0, 0.0, 135.0),
+        _hex("43A047"),
+    )
+    doc.fill(
+        "lid",
+        wvd.PieSpec((150.0, 150.0), 40.0, 180.0, 120.0, chord=True),
+        _hex("1E88E5"),
+    )
+    doc.stroke(
+        "rim",
+        wvd.PieSpec((60.0, 150.0), 35.0, 90.0, 180.0),
+        _hex("D81B60"), 2.0,
+    )
+    return doc.resolve()
+
+
+def build_v2_between():
+    import windvg.document as wvd
+
+    doc = Document(200.0, 200.0)
+    doc.fill("a", wv.Circle((50, 50), 30), wv.BLACK, visible=False)
+    doc.fill("b", wv.Circle((150, 50), 30), wv.BLACK, visible=False)
+
+    def bt(pa, pb, pct):
+        return wvd.CircleSpec(wvd.BetweenPoint(pa, pb, pct), 12.0)
+
+    doc.fill(
+        "mid",
+        bt(wvd.AnchorPoint("a", pct=0.0), wvd.AnchorPoint("b", pct=0.0), 50.0),
+        _hex("FDD835"),
+    )
+    doc.fill(
+        "lerp",
+        wvd.PolySpec(closed=True, points=(
+            wvd.BetweenPoint((20.0, 20.0), (100.0, 160.0), 50.0),
+            wvd.BetweenPoint((180.0, 180.0), (180.0, 20.0), 25.0),
+            wvd.BetweenPoint((60.0, 90.0), (180.0, 180.0), 50.0),
+        )),
+        _hex("7FD1C0"),
+    )
+    doc.fill(
+        "ext",
+        wvd.CircleSpec(
+            wvd.BetweenPoint(
+                wvd.AnchorPoint("a", pct=0.0), wvd.AnchorPoint("b", pct=0.0), 125.0
+            ),
+            4.0,
+        ),
+        _hex("E53935"),
+    )
+    return doc.resolve()
+
+
 BUILDERS = {
     "smoke": build_smoke,
     "anchors": build_anchors,
     "ellipse_grad": build_ellipse_grad,
     "manygon": build_manygon,
     "path_hole": build_path_hole,
+    "v2_transform": build_v2_transform,
+    "v2_group": build_v2_group,
+    "v2_rect_pie": build_v2_rect_pie,
+    "v2_between": build_v2_between,
 }

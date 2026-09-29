@@ -58,3 +58,23 @@ fn golden_many_point_outline_fallback() {
 fn golden_path_with_hole() {
     run_case("path_hole");
 }
+
+#[test]
+fn golden_v2_transform() {
+    run_case("v2_transform");
+}
+
+#[test]
+fn golden_v2_group() {
+    run_case("v2_group");
+}
+
+#[test]
+fn golden_v2_rect_pie() {
+    run_case("v2_rect_pie");
+}
+
+#[test]
+fn golden_v2_between() {
+    run_case("v2_between");
+}

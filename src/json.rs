@@ -95,6 +95,12 @@ fn point_json(p: &PPoint) -> String {
             "{{\"segment\": {{\"node\": \"{node}\", \"index\": {index}, \"pct\": {}}}}}",
             f(*pct)
         ),
+        PKind::Between { a, b, pct } => format!(
+            "{{\"between\": {{\"a\": {}, \"b\": {}, \"pct\": {}}}}}",
+            point_json(a),
+            point_json(b),
+            f(*pct)
+        ),
         PKind::GridCell {
             node,
             col,
@@ -207,6 +213,25 @@ fn shape_json(s: &PShape) -> String {
             "{{\"kind\": \"rounded\", \"shape\": {}, \"radius\": {}}}",
             shape_json(shape),
             f(*radius)
+        ),
+        SKind::Rect { center, width, height } => format!(
+            "{{\"kind\": \"rect\", \"center\": {}, \"size\": [{}, {}]}}",
+            point_json(center),
+            f(*width),
+            f(*height)
+        ),
+        SKind::Pie { center, radius, start_deg, sweep_deg, chord } => format!(
+            "{{\"kind\": \"pie\", \"center\": {}, \"radius\": {}, \"start_deg\": {}, \"sweep_deg\": {}, \"chord\": {}}}",
+            point_json(center),
+            f(*radius),
+            f(*start_deg),
+            f(*sweep_deg),
+            chord
+        ),
+        SKind::Transform { t, shape } => format!(
+            "{{\"kind\": \"transform\", \"t\": [{}, {}, {}, {}, {}, {}], \"shape\": {}}}",
+            f(t[0]), f(t[1]), f(t[2]), f(t[3]), f(t[4]), f(t[5]),
+            shape_json(shape)
         ),
     }
 }

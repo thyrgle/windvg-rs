@@ -159,7 +159,7 @@ impl Parser {
     fn parse_file(&mut self) -> Result<Document, Diag> {
         self.keyword("wvg")?;
         let version = self.integer()?;
-        if version != 1 {
+        if version != 1 && version != 2 {
             let t = self.toks[self.pos - 1].clone();
             return Err(Diag::new(
                 format!("unsupported format version {version}"),
@@ -187,6 +187,7 @@ impl Parser {
                     "paint" => self.parse_paint_decl()?,
                     "fill" | "stroke" | "outline_fill" => nodes.push(self.parse_node()?),
                     "guide" => nodes.push(self.parse_guide()?),
+                    "group" => self.parse_group(&mut nodes)?,
                     "scene" => return Err(self.err_here("duplicate scene declaration")),
                     _ => return Err(self.err_here("expected a statement")),
                 },
@@ -341,7 +342,20 @@ impl Parser {
         };
         let (name, name_span) = self.bind_name("node")?;
         self.expect("`=`", |t| *t == Tok::Eq)?;
-        let shape = self.parse_shape()?;
+        let mut shape = self.parse_shape()?;
+        if self.peek_kw("transform") {
+            self.keyword("transform")?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+            let t = self.parse_transform_expr()?;
+            let span = shape.span;
+            shape = PShape {
+                kind: SKind::Transform {
+                    t,
+                    shape: Box::new(shape),
+                },
+                span,
+            };
+        }
         self.keyword("color")?;
         self.expect("`=`", |t| *t == Tok::Eq)?;
         let paint = self.parse_paint_value()?;
@@ -380,6 +394,118 @@ impl Parser {
             outline_paint,
             span: Span::new(kw.line, kw.col),
         })
+    }
+
+    /// `group [transform_expr] { top* }` — sugar: the group transform is
+    /// composed onto each contained node's own transform (§7.14).
+    fn parse_group(&mut self, nodes: &mut Vec<Node>) -> Result<(), Diag> {
+        self.keyword("group")?;
+        let group_t = if self.peek_kw("transform") {
+            self.keyword("transform")?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+            self.parse_transform_expr()?
+        } else {
+            [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        };
+        self.expect("`{`", |t| *t == Tok::LC)?;
+        let mut inner: Vec<Node> = Vec::new();
+        loop {
+            match &self.peek().tok {
+                Tok::RC => break,
+                Tok::Eof => return Err(self.err_here("unterminated group")),
+                Tok::Ident(s) => match s.as_str() {
+                    "paint" => self.parse_paint_decl()?,
+                    "fill" | "stroke" | "outline_fill" => inner.push(self.parse_node()?),
+                    "guide" => inner.push(self.parse_guide()?),
+                    "group" => self.parse_group(&mut inner)?,
+                    "scene" => return Err(self.err_here("duplicate scene declaration")),
+                    _ => return Err(self.err_here("expected a statement")),
+                },
+                _ => return Err(self.err_here("expected a statement")),
+            }
+        }
+        self.expect("`}`", |t| *t == Tok::RC)?;
+        for mut node in inner {
+            node.shape = compose_group_transform(group_t, node.shape);
+            nodes.push(node);
+        }
+        Ok(())
+    }
+
+    /// Parses a named or matrix transform expression into six coefficients.
+    fn parse_transform_expr(&mut self) -> Result<[f64; 6], Diag> {
+        let t = self.next();
+        let kw = match &t.tok {
+            Tok::Ident(s) => s.clone(),
+            _ => {
+                return Err(Diag::new(
+                    format!("expected a transform, found {}", t.describe()),
+                    t.line,
+                    t.col,
+                ))
+            }
+        };
+        let num = |p: &mut Self| p.number();
+        let maybe_about = |p: &mut Self| -> Result<(f64, f64), Diag> {
+            if p.peek_kw("about") {
+                p.keyword("about")?;
+                Ok(p.literal()?.1)
+            } else {
+                Ok((0.0, 0.0))
+            }
+        };
+        let rad = |deg: f64| deg.to_radians();
+        match kw.as_str() {
+            "translate" => {
+                let tx = num(self)?;
+                let ty = num(self)?;
+                Ok([1.0, 0.0, 0.0, 1.0, tx, ty])
+            }
+            "rotate" => {
+                let deg = num(self)?;
+                let (cx, cy) = maybe_about(self)?;
+                let (c, s_) = (rad(deg).cos(), rad(deg).sin());
+                // T(c) · R · T(-c)
+                Ok([
+                    c,
+                    s_,
+                    -s_,
+                    c,
+                    cx - (c * cx - s_ * cy),
+                    cy - (s_ * cx + c * cy),
+                ])
+            }
+            "scale" => {
+                let sx = num(self)?;
+                let sy = if matches!(self.peek().tok, Tok::Num(_)) {
+                    num(self)?
+                } else {
+                    sx
+                };
+                let (cx, cy) = maybe_about(self)?;
+                Ok([sx, 0.0, 0.0, sy, cx - sx * cx, cy - sy * cy])
+            }
+            "mirror_x" => {
+                let axis = num(self)?;
+                Ok([-1.0, 0.0, 0.0, 1.0, 2.0 * axis, 0.0])
+            }
+            "mirror_y" => {
+                let axis = num(self)?;
+                Ok([1.0, 0.0, 0.0, -1.0, 0.0, 2.0 * axis])
+            }
+            "matrix" => {
+                let mut out = [0.0f64; 6];
+                for v in out.iter_mut() {
+                    *v = num(self)?;
+                }
+                Ok(out)
+            }
+            _ => Err(Diag::new(
+                format!("expected a transform, found `{kw}`"),
+                t.line,
+                t.col,
+            )),
+        }
     }
 
     fn parse_guide(&mut self) -> Result<Node, Diag> {
@@ -544,6 +670,15 @@ impl Parser {
                         start,
                         dir,
                     },
+                    span,
+                })
+            }
+            Tok::Ident(ref s) if s == "between" => {
+                let a = Box::new(self.parse_point()?);
+                let b = Box::new(self.parse_point()?);
+                let pct = self.percent()?;
+                Ok(PPoint {
+                    kind: PKind::Between { a, b, pct },
                     span,
                 })
             }
@@ -901,6 +1036,62 @@ impl Parser {
                     points: literal_points(pts, span),
                 }
             }
+            "rect" => {
+                self.keyword("center")?;
+                eq(self)?;
+                let center = self.parse_point()?;
+                self.keyword("size")?;
+                eq(self)?;
+                let size = self.literal()?.1;
+                if size.0 <= 0.0 || size.1 <= 0.0 {
+                    return Err(Diag::new(
+                        "rect size components must be positive",
+                        span.line,
+                        span.col,
+                    ));
+                }
+                SKind::Rect {
+                    center,
+                    width: size.0,
+                    height: size.1,
+                }
+            }
+            "pie" | "chord" => {
+                let chord = kw == "chord";
+                self.keyword("center")?;
+                eq(self)?;
+                let center = self.parse_point()?;
+                self.keyword("radius")?;
+                eq(self)?;
+                let radius = self.number()?;
+                if radius <= 0.0 {
+                    return Err(Diag::new(
+                        format!("{kw} radius must be positive"),
+                        span.line,
+                        span.col,
+                    ));
+                }
+                self.keyword("start_deg")?;
+                eq(self)?;
+                let start_deg = self.number()?;
+                self.keyword("sweep_deg")?;
+                eq(self)?;
+                let sweep_deg = self.number()?;
+                if !(0.0..360.0).contains(&sweep_deg.abs()) || sweep_deg == 0.0 {
+                    return Err(Diag::new(
+                        format!("{kw} sweep must be strictly within ±360 degrees"),
+                        span.line,
+                        span.col,
+                    ));
+                }
+                SKind::Pie {
+                    center,
+                    radius,
+                    start_deg,
+                    sweep_deg,
+                    chord,
+                }
+            }
             "rounded" => {
                 self.keyword("shape")?;
                 eq(self)?;
@@ -1151,4 +1342,48 @@ pub fn assign_ids(doc: &mut Document) {
     for (i, node) in doc.nodes.iter_mut().enumerate() {
         node.id = format!("n{}", i + 1);
     }
+}
+
+/// `group [t] { … }` sugar: compose the group transform onto the node's own
+/// (own applied first, then the group's) and collapse into one transform.
+fn compose_group_transform(group_t: [f64; 6], shape: PShape) -> PShape {
+    let node_t = match &shape.kind {
+        SKind::Transform { t, .. } => Some(*t),
+        _ => None,
+    };
+    let combined = match node_t {
+        Some(n) => mul6(group_t, n),
+        None => group_t,
+    };
+    match shape.kind {
+        SKind::Transform { shape: inner, .. } => PShape {
+            kind: SKind::Transform {
+                t: combined,
+                shape: inner,
+            },
+            span: shape.span,
+        },
+        other => PShape {
+            kind: SKind::Transform {
+                t: combined,
+                shape: Box::new(PShape {
+                    kind: other,
+                    span: shape.span,
+                }),
+            },
+            span: shape.span,
+        },
+    }
+}
+
+/// Six-coefficient matrix product `(g ∘ n)`: apply `n` first, then `g`.
+fn mul6(g: [f64; 6], n: [f64; 6]) -> [f64; 6] {
+    [
+        g[0] * n[0] + g[2] * n[1],
+        g[1] * n[0] + g[3] * n[1],
+        g[0] * n[2] + g[2] * n[3],
+        g[1] * n[2] + g[3] * n[3],
+        g[0] * n[4] + g[2] * n[5] + g[4],
+        g[1] * n[4] + g[3] * n[5] + g[5],
+    ]
 }

@@ -1,0 +1,10 @@
+// v2: parametric rect center, pie and chord fills, stroked pie
+wvg 2
+scene 220 200
+
+guide g = circle center=(60,60) radius=40
+
+fill box = rect center=@g 25% size=(50,30) color=#fb8c00
+fill wedge = pie center=(150,60) radius=40 start_deg=0 sweep_deg=135 color=#43a047
+fill lid = chord center=(150,150) radius=40 start_deg=180 sweep_deg=120 color=#1e88e5
+stroke rim = pie center=(60,150) radius=35 start_deg=90 sweep_deg=180 color=#d81b60 width=2

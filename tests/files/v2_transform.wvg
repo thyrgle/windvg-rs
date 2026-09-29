@@ -1,0 +1,14 @@
+// v2: node transforms (rotate, translate, scale about points)
+wvg 2
+scene 200 200
+
+guide g = circle center=(100,100) radius=60
+
+fill moved = circle center=(100,100) radius=25
+  transform=translate 40 15 color=#e53935
+
+fill spun = polygon points=[(90,90), (110,90), (110,110), (90,110)]
+  transform=rotate 45 about (100,100) color=#43a047
+
+fill grown = ellipse center=(160,50) rx=20 ry=10
+  transform=scale 1.5 1 about (160,50) color=#1e88e5
