@@ -102,6 +102,19 @@ pub enum RPaint {
     },
 }
 
+/// Live text metadata carried by a text op (spec §7.19). The baked glyph
+/// outlines live in the op's shape; this meta drives SVG export, editor
+/// canvases, and the TinyVG tier-B refusal.
+#[derive(Debug, Clone)]
+pub struct TextMeta {
+    pub content: String,
+    pub at: Pt,
+    pub size: f64,
+    pub font: String,
+    pub anchor: String,
+    pub width: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ROp {
     pub id: String,
@@ -110,6 +123,7 @@ pub struct ROp {
     pub paint: RPaint,
     pub outline_paint: Option<RPaint>,
     pub width: f64,
+    pub text: Option<TextMeta>,
 }
 
 pub fn ellipse_point(c: Pt, rx: f64, ry: f64, rot_deg: f64, t: f64) -> Pt {
@@ -1167,6 +1181,7 @@ impl<'a> Env<'a> {
         let err = |e: String| Diag::new(e, s.span.line, s.span.col);
         match &s.kind {
             SKind::GridGuide { .. } => Ok(vec![]),
+            SKind::Text { .. } => Ok(vec![]),
             SKind::Circle { center, radius } => Ok(vec![RShape::Circle {
                 c: self.resolve_point(center)?,
                 r: *radius,
@@ -1620,6 +1635,45 @@ pub fn resolve(doc: &Document) -> Result<Vec<ROp>, Diag> {
                 node.span.col,
             ));
         }
+        if node.op == OpKind::Text {
+            let SKind::Text {
+                at,
+                content,
+                size,
+                font,
+                anchor,
+            } = &node.shape.kind
+            else {
+                return Err(Diag::new(
+                    format!("text node `{}` has a non-text shape", node.name),
+                    node.span.line,
+                    node.span.col,
+                ));
+            };
+            let p = env.resolve_point(at)?;
+            let width = crate::font::measure(content, *size, font)
+                .map_err(|e| Diag::new(e, node.span.line, node.span.col))?;
+            let shapes = crate::font::bake(p, content, *size, font, anchor)
+                .map_err(|e| Diag::new(e, node.span.line, node.span.col))?;
+            let meta = TextMeta {
+                content: content.clone(),
+                at: p,
+                size: *size,
+                font: font.clone(),
+                anchor: anchor.clone(),
+                width,
+            };
+            ops.push(ROp {
+                id: node.id.clone(),
+                kind: OpKind::Text,
+                shape: RShape::Compound(shapes),
+                paint: resolve_paint(&node.paint),
+                outline_paint: None,
+                width: 0.0,
+                text: Some(meta),
+            });
+            continue;
+        }
         let shapes = env.node_shapes(idx)?;
         for shape in shapes.iter() {
             if node.op == OpKind::Fill && !shape.fillable() {
@@ -1645,6 +1699,7 @@ pub fn resolve(doc: &Document) -> Result<Vec<ROp>, Diag> {
                 paint: resolve_paint(&node.paint),
                 outline_paint: node.outline_paint.as_ref().map(resolve_paint),
                 width: node.stroke_width,
+                text: None,
             });
             if node.op == OpKind::Stroke {
                 for marker in &node.markers {
@@ -1662,6 +1717,7 @@ pub fn resolve(doc: &Document) -> Result<Vec<ROp>, Diag> {
                                 .unwrap_or_else(|| resolve_paint(&node.paint)),
                             outline_paint: None,
                             width: 1.0,
+                            text: None,
                         });
                     }
                 }

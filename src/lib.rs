@@ -1,3 +1,4 @@
+pub mod font;
 pub mod geom;
 pub mod ir;
 pub mod json;

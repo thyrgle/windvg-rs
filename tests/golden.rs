@@ -14,7 +14,7 @@ fn run_case(name: &str) {
     let mut doc = windvg::parser::parse(&src).unwrap_or_else(|e| panic!("{name}: parse: {e}"));
     windvg::parser::assign_ids(&mut doc);
     let ops = windvg::resolve::resolve(&doc).unwrap_or_else(|e| panic!("{name}: resolve: {e}"));
-    let bytes = windvg::tvg::encode(&ops, doc.width, doc.height, 4)
+    let bytes = windvg::tvg::encode(&ops, doc.width, doc.height, 4, false)
         .unwrap_or_else(|e| panic!("{name}: encode: {e}"));
 
     if bytes != expected {
@@ -37,6 +37,35 @@ fn run_case(name: &str) {
 #[test]
 fn golden_smoke_compound_gradient_generators() {
     run_case("smoke");
+}
+
+/// Text documents (tier B) conform via ops JSON + SVG, not .tvg bytes.
+#[test]
+fn golden_v4_text_svg_and_metadata() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/files");
+    let src = std::fs::read_to_string(dir.join("v4_text.wvg")).unwrap();
+    let expected_svg = std::fs::read_to_string(dir.join("expected/v4_text.svg")).unwrap();
+    let expected_ops = std::fs::read_to_string(dir.join("v4_text.ops.json")).unwrap();
+
+    let mut doc = windvg::parser::parse(&src).unwrap();
+    windvg::parser::assign_ids(&mut doc);
+    let ops = windvg::resolve::resolve(&doc).unwrap();
+
+    let got_svg = windvg::svg::render(&ops, doc.width, doc.height);
+    assert_eq!(got_svg, expected_svg, "SVG export must match the reference");
+
+    let got_ops = windvg::json::ops_json(&ops);
+    assert_eq!(
+        got_ops.trim_end(),
+        expected_ops.trim_end(),
+        "ops JSON must match the reference byte-for-byte"
+    );
+
+    // TinyVG refuses text unless dropped
+    assert!(windvg::tvg::encode(&ops, doc.width, doc.height, 4, false).is_err());
+    let dropped =
+        windvg::tvg::encode(&ops, doc.width, doc.height, 4, true).expect("drop-text encode");
+    assert_eq!(&dropped[..2], b"\x72\x56");
 }
 
 #[test]

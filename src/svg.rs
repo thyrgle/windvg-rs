@@ -4,6 +4,64 @@ use crate::geom::Pt;
 use crate::ir::OpKind;
 use crate::resolve::{RInstr, ROp, RPaint, RShape, RSubPath};
 
+/// Python-parity number formatting: 3 decimals, trailing zeros trimmed.
+fn fmt3(v: f64) -> String {
+    let t = format!("{v:.3}");
+    let t = t.trim_end_matches('0').trim_end_matches('.');
+    if t.is_empty() || t == "-0" {
+        "0".to_string()
+    } else {
+        t.to_string()
+    }
+}
+
+fn escape_text(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn font_family(font: &str) -> &str {
+    match font {
+        "sans" => "Noto Sans",
+        other => other,
+    }
+}
+
+fn text_element(
+    op: &ROp,
+    meta: &crate::resolve::TextMeta,
+    gradient_id: Option<&str>,
+) -> String {
+    let shift = match meta.anchor.as_str() {
+        "middle" => 0.5,
+        "end" => 1.0,
+        _ => 0.0,
+    };
+    let x = meta.at.x - meta.width * shift;
+    let fill = match gradient_id {
+        Some(id) => format!("fill=\"url(#{id})\""),
+        None => match &op.paint {
+            RPaint::Color(c) => {
+                let mut s = format!("fill=\"{}\"", css_color(*c));
+                if c.a < 1.0 {
+                    s.push_str(&format!(" fill-opacity=\"{:.3}\"", c.a));
+                }
+                s
+            }
+            _ => "fill=\"none\"".to_string(),
+        },
+    };
+    format!(
+        "<text x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" text-anchor=\"{}\" {}>{}</text>",
+        fmt3(x),
+        fmt3(meta.at.y),
+        font_family(&meta.font),
+        fmt3(meta.size),
+        meta.anchor,
+        fill,
+        escape_text(&meta.content)
+    )
+}
+
 fn fmt_f(v: f64) -> String {
     if v == v.trunc() && v.abs() < 1e15 {
         format!("{v:.1}")
@@ -35,7 +93,8 @@ pub fn render(ops: &[ROp], width: f64, height: f64) -> String {
 
     for op in ops {
         let gradient_fill = match (&op.paint, op.kind) {
-            (RPaint::Linear { .. }, OpKind::Fill) | (RPaint::Radial { .. }, OpKind::Fill) => {
+            (RPaint::Linear { .. }, OpKind::Fill | OpKind::Text)
+            | (RPaint::Radial { .. }, OpKind::Fill | OpKind::Text) => {
                 let id = format!("g{}", defs_matches(&defs));
                 push_gradient_def(&mut defs, &id, &op.paint);
                 Some(id)
@@ -99,7 +158,10 @@ pub fn render(ops: &[ROp], width: f64, height: f64) -> String {
             ""
         };
 
-        let elements: Vec<String> = match (&op.shape, op.kind) {
+        let elements: Vec<String> = if let Some(meta) = &op.text {
+            vec![text_element(op, meta, gradient_fill.as_deref())]
+        } else {
+        match (&op.shape, op.kind) {
             (RShape::Polygon(pts), _) => {
                 let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
                 vec![format!(
@@ -314,6 +376,7 @@ pub fn render(ops: &[ROp], width: f64, height: f64) -> String {
                 let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
                 vec![format!("<path{} d=\"{}\"/>", attrs, path_attr(&all))]
             }
+        }
         };
 
         for e in elements {
@@ -325,10 +388,10 @@ pub fn render(ops: &[ROp], width: f64, height: f64) -> String {
 
     out.push_str(&format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">\n",
-        fmt_f(width),
-        fmt_f(height),
-        fmt_f(width),
-        fmt_f(height)
+        fmt3(width),
+        fmt3(height),
+        fmt3(width),
+        fmt3(height)
     ));
     if !defs.is_empty() {
         out.push_str(&format!("  <defs>\n{defs}  </defs>\n"));

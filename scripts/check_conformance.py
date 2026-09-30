@@ -17,12 +17,70 @@ windvg project environment:
 """
 
 import argparse
+import json
 import pathlib
 import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from reference_builders import BUILDERS  # noqa: E402
+
+# Text documents (spec §7.19, tier B) carry no .tvg golden: hosts bake
+# glyphs with engine-local settings. They conform via resolved metadata
+# (ops JSON) and exact SVG export, and their TinyVG encode must FAIL
+# unless --drop-text is passed.
+TEXT_DOCS = {"v4_text"}
+
+
+def check_text_doc(rust_bin: str, name: str, src: pathlib.Path, doc) -> int:
+    """Conformance for a tier-B text document (spec §9 carve-out)."""
+    failures = 0
+    rust_ops = subprocess.run(
+        [rust_bin, "ops", str(src)], check=True, capture_output=True, text=True
+    ).stdout
+    try:
+        got = json.loads(rust_ops)
+        want = json.loads(json.dumps(doc.resolve_to_json()))
+        if got != want:
+            print(f"FAIL {name}: ops JSON differs from the Python reference")
+            failures += 1
+        else:
+            print(f"OK   {name}: ops JSON matches (text metadata)")
+    except json.JSONDecodeError as e:
+        print(f"FAIL {name}: ops JSON invalid ({e})")
+        failures += 1
+
+    rust_svg = subprocess.run(
+        [rust_bin, "svg", str(src)], check=True, capture_output=True, text=True
+    ).stdout
+    if rust_svg == doc.resolve().to_svg():
+        print(f"OK   {name}: SVG export matches ({len(rust_svg)} bytes)")
+    else:
+        print(f"FAIL {name}: SVG export differs from the Python reference")
+        failures += 1
+
+    refused = subprocess.run(
+        [rust_bin, "tvg", str(src), "-o", "/tmp/conformance_text.tvg"],
+        capture_output=True,
+        text=True,
+    )
+    if refused.returncode != 0:
+        print(f"OK   {name}: TinyVG encode refused by default")
+    else:
+        print(f"FAIL {name}: TinyVG encode should refuse text without --drop-text")
+        failures += 1
+
+    dropped = subprocess.run(
+        [rust_bin, "tvg", str(src), "--drop-text", "-o", "/tmp/conformance_text.tvg"],
+        capture_output=True,
+        text=True,
+    )
+    if dropped.returncode == 0:
+        print(f"OK   {name}: --drop-text encode succeeds")
+    else:
+        print(f"FAIL {name}: --drop-text encode should succeed")
+        failures += 1
+    return failures
 
 
 def main() -> int:
@@ -42,6 +100,9 @@ def main() -> int:
             print(f"SKIP {name}: missing {src}")
             continue
         built = build()
+        if name in TEXT_DOCS:
+            failures += check_text_doc(args.rust_bin, name, src, built)
+            continue
         scene = built.resolve() if hasattr(built, "resolve") else built
         expected: bytes = scene.to_tinyvg()
         out = pathlib.Path("/tmp") / f"conformance_{name}.tvg"

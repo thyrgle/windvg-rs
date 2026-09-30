@@ -18,6 +18,7 @@ struct Args {
     file: String,
     out: Option<String>,
     scale: u32,
+    drop_text: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -29,8 +30,10 @@ fn parse_args() -> Result<Args, String> {
     let file = it.next().ok_or_else(|| "missing input file".to_string())?;
     let mut out = None;
     let mut scale = 4u32;
+    let mut drop_text = false;
     while let Some(a) = it.next() {
         match a.as_str() {
+            "--drop-text" => drop_text = true,
             "-o" => out = Some(it.next().ok_or_else(|| "-o needs a value".to_string())?),
             "--scale" => {
                 let v = it
@@ -56,6 +59,7 @@ fn parse_args() -> Result<Args, String> {
         file,
         out,
         scale,
+        drop_text,
     })
 }
 
@@ -132,7 +136,7 @@ fn main() -> ExitCode {
             Err(e) => fail(&args.file, e),
         },
         "tvg" => match windvg::resolve::resolve(&doc) {
-            Ok(ops) => match windvg::tvg::encode(&ops, doc.width, doc.height, args.scale) {
+            Ok(ops) => match windvg::tvg::encode(&ops, doc.width, doc.height, args.scale, args.drop_text) {
                 Ok(bytes) => match &args.out {
                     Some(p) => {
                         if let Err(e) = std::fs::write(p, &bytes) {

@@ -60,6 +60,7 @@ pub const RESERVED: &[&str] = &[
     "color",
     "cols",
     "compound",
+    "content",
     "ctrl",
     "cw",
     "cyan",
@@ -71,6 +72,7 @@ pub const RESERVED: &[&str] = &[
     "end",
     "end_color",
     "fill",
+    "font",
     "from",
     "gray",
     "green",
@@ -84,6 +86,7 @@ pub const RESERVED: &[&str] = &[
     "linear",
     "magenta",
     "matrix",
+    "middle",
     "mirror_x",
     "mirror_y",
     "motifs",
@@ -115,6 +118,7 @@ pub const RESERVED: &[&str] = &[
     "rounded",
     "rotation_deg",
     "rows",
+    "sans",
     "rx",
     "ry",
     "scale",
@@ -123,6 +127,7 @@ pub const RESERVED: &[&str] = &[
     "shape",
     "shapes",
     "sides",
+    "size",
     "star",
     "start",
     "start_angle_deg",
@@ -132,6 +137,7 @@ pub const RESERVED: &[&str] = &[
     "subpaths",
     "sweep_deg",
     "tangent",
+    "text",
     "to",
     "track",
     "transform",
@@ -414,6 +420,13 @@ pub enum SKind {
         t: [f64; 6],
         shape: Box<PShape>,
     },
+    Text {
+        at: PPoint,
+        content: String,
+        size: f64,
+        font: String,
+        anchor: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -427,6 +440,7 @@ pub enum OpKind {
     Fill,
     Stroke,
     OutlineFill,
+    Text,
 }
 
 impl OpKind {
@@ -435,6 +449,7 @@ impl OpKind {
             OpKind::Fill => "fill",
             OpKind::Stroke => "stroke",
             OpKind::OutlineFill => "outline_fill",
+            OpKind::Text => "text",
         }
     }
 }

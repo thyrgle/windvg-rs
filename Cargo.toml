@@ -13,6 +13,9 @@ path = "src/lib.rs"
 name = "windvg"
 path = "src/main.rs"
 
+[dependencies]
+ttf-parser = { version = "0.24", default-features = true, features = ["std"] }
+
 [profile.release]
 lto = true
 codegen-units = 1

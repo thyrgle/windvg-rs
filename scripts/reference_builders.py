@@ -309,6 +309,18 @@ def build_v3_markers():
     return doc
 
 
+# ---- v4_text.wvg: text nodes (tier B; SVG + ops JSON conformance only) ----
+
+def build_v4_text():
+    doc = Document(240.0, 120.0)
+    doc.text("title", (80.0, 40.0), "Hi", 16.0, color=_hex("000000"))
+    doc.text("mid", (200.0, 40.0), "Hi", 16.0, anchor="middle", color=_hex("E53935"))
+    doc.text("right", (200.0, 80.0), "Hi", 16.0, anchor="end")
+    doc.text("quote", (80.0, 100.0), 'say "hi" \\ ok', 12.0)
+    doc.text("ghost", (120.0, 100.0), "boo", 12.0, visible=False)
+    return doc
+
+
 BUILDERS = {
     "smoke": build_smoke,
     "anchors": build_anchors,
@@ -323,4 +335,5 @@ BUILDERS = {
     "v3_polar": build_v3_polar,
     "v3_defs": build_v3_defs,
     "v3_markers": build_v3_markers,
+    "v4_text": build_v4_text,
 }

@@ -244,7 +244,7 @@ fill m = grid motifs=[circle center=(0,0) radius=1] cols=2 rows=2 dx=10 dy=20 or
 #[test]
 fn parse_and_validation_errors() {
     let cases = [
-        ("wvg 4\nscene 10 10\n", "version"),
+        ("wvg 9\nscene 10 10\n", "version"),
         ("scene 10 10\n", "wvg"),
         ("wvg 1\n", "scene"),
         ("wvg 1\nscene 10 10\nwvg 1\n", "statement"),
@@ -326,7 +326,7 @@ fn v2_transforms_parse_and_version_two_is_accepted() {
     resolve_src("wvg 1\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     resolve_src("wvg 2\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     // future versions are rejected
-    assert!(resolve_src("wvg 4\nscene 10 10\n").is_err());
+    assert!(resolve_src("wvg 5\nscene 10 10\n").is_err());
 }
 
 #[test]
@@ -403,4 +403,129 @@ fill b = circle center=between (10,10) (30,30) 150% radius=2 color=blue
             _ => panic!("expected a circle"),
         }
     }
+}
+
+// ---- v4: strings and the text node (spec §7.19) ----
+
+#[test]
+fn v4_string_lexing_and_escapes() {
+    let toks = windvg::lexer::lex(r#"content="say \"hi\" \\ ok""#).unwrap();
+    match &toks[0].tok {
+        windvg::lexer::Tok::Ident(s) => assert_eq!(s, "content"),
+        other => panic!("expected ident, found {other:?}"),
+    }
+    let windvg::lexer::Tok::Str(s) = &toks[2].tok else {
+        panic!("expected string, found {:?}", toks[2].tok);
+    };
+    assert_eq!(s, r#"say "hi" \ ok"#);
+
+    // unterminated and invalid escapes are lexer errors
+    assert!(windvg::lexer::lex(r#""unterminated"#).is_err());
+    assert!(windvg::lexer::lex(r#""bad \n escape""#).is_err());
+    assert!(windvg::lexer::lex("\"two\nlines\"").is_err());
+}
+
+#[test]
+fn v4_text_node_parses_and_resolves() {
+    let src = r#"
+wvg 4
+scene 200 100
+
+text t1 = at=(20,50) content="Hi" size=16 color=red
+text t2 = at=(100,50) content="Hi" size=16 anchor=middle
+text t3 = at=(180,50) content="Hi" size=16 anchor=end hidden
+"#;
+    let mut doc = windvg::parser::parse(src).unwrap();
+    windvg::parser::assign_ids(&mut doc);
+    assert_eq!(doc.nodes.len(), 3);
+    let ops = windvg::resolve::resolve(&doc).unwrap();
+    // hidden node contributes nothing
+    assert_eq!(ops.len(), 2);
+    assert_eq!(ops[0].kind, windvg::ir::OpKind::Text);
+    let meta = ops[0].text.as_ref().unwrap();
+    assert_eq!(meta.content, "Hi");
+    assert_eq!(meta.anchor, "start");
+    let _ = meta.width;
+    // meta.at carries the raw baseline point; the anchor shift applies at
+    // export/bake time (covered by the SVG golden)
+    let m2 = ops[1].text.as_ref().unwrap();
+    assert!((m2.at.x - 100.0).abs() < 1e-9);
+    assert_eq!(m2.anchor, "middle");
+
+    // anchors: at must accept full parametric points
+    let src2 = r#"
+wvg 4
+scene 200 100
+
+fill base = circle center=(100,50) radius=40 color=blue
+text label = at=@base 50% + (0,40) content="wheel" size=14
+
+"#;
+    let mut doc2 = windvg::parser::parse(src2).unwrap();
+    windvg::parser::assign_ids(&mut doc2);
+    let ops2 = windvg::resolve::resolve(&doc2).unwrap();
+    let m = ops2[1].text.as_ref().unwrap();
+    // @base 50% is the left side of the circle (60,50); + (0,40) → (60,90)
+    assert!((m.at.x - 60.0).abs() < 1e-9 && (m.at.y - 90.0).abs() < 1e-9);
+}
+
+#[test]
+fn v4_text_validation_errors() {
+    // size must be positive
+    let bad_size = r#"
+wvg 4
+scene 100 100
+text t = at=(10,10) content="x" size=0
+"#;
+    assert!(windvg::parser::parse(bad_size).is_err());
+
+    // anchor must be start|middle|end
+    let bad_anchor = r#"
+wvg 4
+scene 100 100
+text t = at=(10,10) content="x" size=10 anchor=left
+"#;
+    assert!(windvg::parser::parse(bad_anchor).is_err());
+
+    // unknown font fails at resolve
+    let unknown_font = r#"
+wvg 4
+scene 100 100
+text t = at=(10,10) content="x" size=10 font=comic
+"#;
+    let mut doc = windvg::parser::parse(unknown_font).unwrap();
+    windvg::parser::assign_ids(&mut doc);
+    assert!(windvg::resolve::resolve(&doc).is_err());
+
+    // `text` is reserved and cannot be a node name
+    let reserved = r#"
+wvg 4
+scene 100 100
+fill text = circle center=(10,10) radius=5 color=red
+"#;
+    assert!(windvg::parser::parse(reserved).is_err());
+}
+
+#[test]
+fn v4_version_gates() {
+    assert!(windvg::parser::parse("wvg 4 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 5 scene 10 10").is_err());
+}
+
+#[test]
+fn v4_text_in_group_and_tier_b_refusal() {
+    let src = r#"
+wvg 4
+scene 200 100
+
+group {
+  text label = at=(20,50) content="in group" size=12
+}
+"#;
+    let mut doc = windvg::parser::parse(src).unwrap();
+    windvg::parser::assign_ids(&mut doc);
+    let ops = windvg::resolve::resolve(&doc).unwrap();
+    assert_eq!(ops.len(), 1);
+    assert!(windvg::tvg::encode(&ops, doc.width, doc.height, 4, false).is_err());
+    assert!(windvg::tvg::encode(&ops, doc.width, doc.height, 4, true).is_ok());
 }

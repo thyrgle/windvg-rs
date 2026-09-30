@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">
+  <text x="80" y="40" font-family="Noto Sans" font-size="16" text-anchor="start" fill="#000000">Hi</text>
+  <text x="192.008" y="40" font-family="Noto Sans" font-size="16" text-anchor="middle" fill="#E53935">Hi</text>
+  <text x="184.016" y="80" font-family="Noto Sans" font-size="16" text-anchor="end" fill="#000000">Hi</text>
+  <text x="80" y="100" font-family="Noto Sans" font-size="12" text-anchor="start" fill="#000000">say "hi" \ ok</text>
+</svg>

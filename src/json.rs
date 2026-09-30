@@ -72,6 +72,24 @@ fn rpaint_json(p: &RPaint) -> String {
     }
 }
 
+fn jstr(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn point_json(p: &PPoint) -> String {
     match &p.kind {
         PKind::Literal(x, y) => num_list((*x, *y)),
@@ -246,6 +264,14 @@ fn shape_json(s: &PShape) -> String {
             "{{\"kind\": \"rounded\", \"shape\": {}, \"radius\": {}}}",
             shape_json(shape),
             f(*radius)
+        ),
+        SKind::Text { at, content, size, font, anchor } => format!(
+            "{{\"kind\": \"text\", \"at\": {}, \"content\": {}, \"size\": {}, \"font\": {}, \"anchor\": {}}}",
+            point_json(at),
+            jstr(content),
+            f(*size),
+            jstr(font),
+            jstr(anchor)
         ),
         SKind::Use { def_name } => {
             format!("{{\"kind\": \"use\", \"def\": \"{def_name}\"}}")
@@ -469,6 +495,31 @@ pub fn ops_json(ops: &[ROp]) -> String {
     let items: Vec<String> = ops
         .iter()
         .map(|op| {
+            if let Some(meta) = &op.text {
+                let pen_x = meta.at.x
+                    - meta.width
+                        * match meta.anchor.as_str() {
+                            "middle" => 0.5,
+                            "end" => 1.0,
+                            _ => 0.0,
+                        };
+                return format!(
+                    "{{\"id\": \"{}\", \"op\": \"text\", \"at\": [{}, {}], \"content\": {}, \"size\": {}, \"font\": {}, \"anchor\": {}, \"width\": {}, \"paint\": {}, \"bbox\": [{}, {}, {}, {}]}}",
+                    op.id,
+                    f(meta.at.x),
+                    f(meta.at.y),
+                    jstr(&meta.content),
+                    f(meta.size),
+                    jstr(&meta.font),
+                    jstr(&meta.anchor),
+                    f(meta.width),
+                    rpaint_json(&op.paint),
+                    f(pen_x),
+                    f(meta.at.y - 0.8 * meta.size),
+                    f(pen_x + meta.width),
+                    f(meta.at.y + 0.2 * meta.size)
+                );
+            }
             let (lo, hi) = op.shape.bbox();
             let outline = match &op.outline_paint {
                 Some(p) => rpaint_json(p),

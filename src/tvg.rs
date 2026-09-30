@@ -28,11 +28,29 @@ const INSTR_QUAD: u8 = 7;
 
 const MAX_OUTLINE_SEGMENTS: usize = 64;
 
-pub fn encode(ops: &[ROp], width: f64, height: f64, scale: u32) -> Result<Vec<u8>, String> {
+pub fn encode(
+    ops: &[ROp],
+    width: f64,
+    height: f64,
+    scale: u32,
+    drop_text: bool,
+) -> Result<Vec<u8>, String> {
     if scale > 15 {
         return Err("scale must fit in 4 bits (0..15)".into());
     }
-    let coord_range = choose_coord_range(ops, scale)?;
+    let has_text = ops.iter().any(|op| op.kind == crate::ir::OpKind::Text);
+    if has_text && !drop_text {
+        return Err(
+            "cannot encode text as TinyVG (fidelity tier B); pass --drop-text to omit text nodes"
+                .into(),
+        );
+    }
+    let filtered: Vec<ROp> = ops
+        .iter()
+        .filter(|op| op.kind != crate::ir::OpKind::Text)
+        .cloned()
+        .collect();
+    let coord_range = choose_coord_range(&filtered, scale)?;
     let bits: u32 = match coord_range {
         0 => 16,
         2 => 32,
@@ -64,7 +82,7 @@ pub fn encode(ops: &[ROp], width: f64, height: f64, scale: u32) -> Result<Vec<u8
     }
 
     // color table
-    let colors = collect_colors(ops);
+    let colors = collect_colors(&filtered);
     w.varuint(colors.len() as u64);
     for c in &colors {
         for ch in rgba8(*c) {
@@ -73,7 +91,7 @@ pub fn encode(ops: &[ROp], width: f64, height: f64, scale: u32) -> Result<Vec<u8
     }
 
     // commands
-    for op in ops {
+    for op in &filtered {
         emit_op(&mut w, op, &colors)?;
     }
     w.byte(END_OF_DOCUMENT);
@@ -343,6 +361,7 @@ fn emit_op(w: &mut Writer, op: &ROp, colors: &[Color]) -> Result<(), String> {
                         paint: op.paint,
                         outline_paint: None,
                         width: op.width,
+                        text: None,
                     };
                     emit_op(w, &sub_op, colors)?;
                 }
@@ -389,6 +408,7 @@ fn emit_op(w: &mut Writer, op: &ROp, colors: &[Color]) -> Result<(), String> {
                     w.paint_style(&op.paint, colors)?;
                     emit_shape_segments(w, &op.shape)?;
                 }
+                OpKind::Text => unreachable!("text ops are filtered before encoding"),
             }
             return Ok(());
         }
@@ -415,6 +435,7 @@ fn emit_op(w: &mut Writer, op: &ROp, colors: &[Color]) -> Result<(), String> {
                     w.paint_style(&op.paint, colors)?;
                     emit_shape_segments(w, &op.shape)?;
                 }
+                OpKind::Text => unreachable!("text ops are filtered before encoding"),
             }
             return Ok(());
         }
@@ -484,6 +505,7 @@ fn emit_op(w: &mut Writer, op: &ROp, colors: &[Color]) -> Result<(), String> {
                     w.point(*p)?;
                 }
             }
+            OpKind::Text => unreachable!("text ops are filtered before encoding"),
         }
     }
     Ok(())

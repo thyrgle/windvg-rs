@@ -8,6 +8,8 @@ pub enum Tok {
     Num(f64),
     /// Normalized to 6 or 8 uppercase hex digits.
     Hex(String),
+    /// Double-quoted string with `\"` and `\\` escapes (spec v4 §3).
+    Str(String),
     LP,
     RP,
     LB,
@@ -35,6 +37,7 @@ impl Token {
             Tok::Ident(s) => format!("`{s}`"),
             Tok::Num(v) => format!("number {v}"),
             Tok::Hex(h) => format!("`#{h}`"),
+            Tok::Str(_) => "string".into(),
             Tok::LP => "`(`".into(),
             Tok::RP => "`)`".into(),
             Tok::LB => "`[`".into(),
@@ -222,6 +225,58 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diag> {
                     }
                 }
                 push!(Tok::Hex(digits));
+            }
+            '"' => {
+                let start_col = col;
+                i += 1;
+                col += 1;
+                let mut text = String::new();
+                loop {
+                    let Some(c) = b.get(i) else {
+                        return Err(Diag::new("unterminated string", line, start_col));
+                    };
+                    match c {
+                        '"' => {
+                            i += 1;
+                            col += 1;
+                            break;
+                        }
+                        '\\' => {
+                            let Some(&esc) = b.get(i + 1) else {
+                                return Err(Diag::new(
+                                    "unterminated string",
+                                    line,
+                                    start_col,
+                                ));
+                            };
+                            match esc {
+                                '"' | '\\' => text.push(esc),
+                                other => {
+                                    return Err(Diag::new(
+                                        format!("invalid string escape `\\{other}`"),
+                                        line,
+                                        col,
+                                    ));
+                                }
+                            }
+                            i += 2;
+                            col += 2;
+                        }
+                        '\n' => {
+                            return Err(Diag::new(
+                                "unterminated string (newline in string literal)",
+                                line,
+                                col,
+                            ));
+                        }
+                        other => {
+                            text.push(*other);
+                            i += 1;
+                            col += 1;
+                        }
+                    }
+                }
+                push!(Tok::Str(text));
             }
             c if c == '_' || c.is_ascii_alphabetic() => {
                 let start = i;

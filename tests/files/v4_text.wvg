@@ -1,0 +1,10 @@
+// v4 golden: text nodes (fidelity tier B).
+// Anchors, default color, escapes, and hidden nodes. No .tvg golden —
+// text documents conform via SVG and resolved metadata (spec §9).
+wvg 4 scene 240 120
+
+text title = at=(80,40) content="Hi" size=16 color=black
+text mid = at=(200,40) content="Hi" size=16 anchor=middle color=#E53935
+text right = at=(200,80) content="Hi" size=16 anchor=end
+text quote = at=(80,100) content="say \"hi\" \\ ok" size=12
+text ghost = at=(120,100) content="boo" size=12 hidden

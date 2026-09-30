@@ -161,7 +161,7 @@ impl Parser {
     fn parse_file(&mut self) -> Result<Document, Diag> {
         self.keyword("wvg")?;
         let version = self.integer()?;
-        if version != 1 && version != 2 && version != 3 {
+        if !(1..=4).contains(&version) {
             let t = self.toks[self.pos - 1].clone();
             return Err(Diag::new(
                 format!("unsupported format version {version}"),
@@ -188,6 +188,7 @@ impl Parser {
                 Tok::Ident(s) => match s.as_str() {
                     "paint" => self.parse_paint_decl()?,
                     "fill" | "stroke" | "outline_fill" => nodes.push(self.parse_node()?),
+                    "text" => nodes.push(self.parse_text_node()?),
                     "guide" => nodes.push(self.parse_guide()?),
                     "group" => self.parse_group(&mut nodes)?,
                     "def" => self.parse_def()?,
@@ -202,6 +203,101 @@ impl Parser {
             height,
             nodes,
             defs: self.defs.drain().collect(),
+        })
+    }
+
+    /// `text name = at=<point> content="s" size=n [font=f]
+    ///  [anchor=start|middle|end] [color=paint] [hidden]` (spec §7.19).
+    fn parse_text_node(&mut self) -> Result<Node, Diag> {
+        let kw = self.next();
+        let (name, name_span) = self.bind_name("node")?;
+        self.expect("`=`", |t| *t == Tok::Eq)?;
+        self.keyword("at")?;
+        self.expect("`=`", |t| *t == Tok::Eq)?;
+        let at = self.parse_point()?;
+        self.keyword("content")?;
+        self.expect("`=`", |t| *t == Tok::Eq)?;
+        let content = match self.next().tok {
+            Tok::Str(s) => s,
+            ref other => {
+                return Err(Diag::new(
+                    format!("expected a string, found {other:?}"),
+                    name_span.line,
+                    name_span.col,
+                ));
+            }
+        };
+        self.keyword("size")?;
+        self.expect("`=`", |t| *t == Tok::Eq)?;
+        let size = self.number()?;
+        if size <= 0.0 {
+            return Err(Diag::new(
+                "text size must be positive",
+                name_span.line,
+                name_span.col,
+            ));
+        }
+        let mut font = "sans".to_string();
+        if self.peek_kw("font") {
+            self.keyword("font")?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+            font = match self.next().tok {
+                Tok::Ident(s) => s,
+                ref other => {
+                    return Err(Diag::new(
+                        format!("expected a font name, found {other:?}"),
+                        name_span.line,
+                        name_span.col,
+                    ));
+                }
+            };
+        }
+        let mut anchor = "start".to_string();
+        if self.peek_kw("anchor") {
+            self.keyword("anchor")?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+            anchor = match self.next().tok {
+                Tok::Ident(ref s) if s == "start" || s == "middle" || s == "end" => s.clone(),
+                ref other => {
+                    return Err(Diag::new(
+                        format!("expected anchor start|middle|end, found {other:?}"),
+                        name_span.line,
+                        name_span.col,
+                    ));
+                }
+            };
+        }
+        let mut paint = Paint::Color(Color::rgb(0.0, 0.0, 0.0));
+        if self.peek_kw("color") {
+            self.keyword("color")?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+            paint = self.parse_paint_value()?;
+        }
+        let mut visible = true;
+        if self.peek_kw("hidden") {
+            self.keyword("hidden")?;
+            visible = false;
+        }
+        Ok(Node {
+            id: String::new(), // assigned after parsing completes
+            name,
+            op: OpKind::Text,
+            visible,
+            shape: PShape {
+                kind: SKind::Text {
+                    at,
+                    content,
+                    size,
+                    font,
+                    anchor,
+                },
+                span: Span::new(kw.line, kw.col),
+            },
+            paint,
+            stroke_width: 1.0,
+            outline_paint: None,
+            markers: Vec::new(),
+            span: Span::new(kw.line, kw.col),
         })
     }
 
@@ -466,6 +562,7 @@ impl Parser {
             [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         };
         self.expect("`{`", |t| *t == Tok::LC)?;
+        let identity = group_t == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
         let mut inner: Vec<Node> = Vec::new();
         loop {
             match &self.peek().tok {
@@ -474,6 +571,7 @@ impl Parser {
                 Tok::Ident(s) => match s.as_str() {
                     "paint" => self.parse_paint_decl()?,
                     "fill" | "stroke" | "outline_fill" => inner.push(self.parse_node()?),
+                    "text" => inner.push(self.parse_text_node()?),
                     "guide" => inner.push(self.parse_guide()?),
                     "group" => self.parse_group(&mut inner)?,
                     "scene" => return Err(self.err_here("duplicate scene declaration")),
@@ -484,6 +582,17 @@ impl Parser {
         }
         self.expect("`}`", |t| *t == Tok::RC)?;
         for mut node in inner {
+            if node.op == OpKind::Text {
+                if !identity {
+                    return Err(Diag::new(
+                        "text nodes cannot sit in a transformed group",
+                        node.span.line,
+                        node.span.col,
+                    ));
+                }
+                nodes.push(node);
+                continue;
+            }
             node.shape = compose_group_transform(group_t, node.shape);
             nodes.push(node);
         }
