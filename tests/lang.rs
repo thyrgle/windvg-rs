@@ -322,10 +322,11 @@ fn v2_transforms_parse_and_version_two_is_accepted() {
         }
         _ => panic!("expected a circle"),
     }
-    // v1 files remain valid
+    // v1 and v2 files remain valid
     resolve_src("wvg 1\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
-    // v3 is rejected
-    assert!(resolve_src("wvg 3\nscene 10 10\n").is_err());
+    resolve_src("wvg 2\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
+    // future versions are rejected
+    assert!(resolve_src("wvg 4\nscene 10 10\n").is_err());
 }
 
 #[test]
