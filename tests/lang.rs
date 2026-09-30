@@ -326,7 +326,7 @@ fn v2_transforms_parse_and_version_two_is_accepted() {
     resolve_src("wvg 1\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     resolve_src("wvg 2\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     // future versions are rejected
-    assert!(resolve_src("wvg 8\nscene 10 10\n").is_err());
+    assert!(resolve_src("wvg 9\nscene 10 10\n").is_err());
 }
 
 #[test]
@@ -512,7 +512,8 @@ fn v4_version_gates() {
     assert!(windvg::parser::parse("wvg 5 scene 10 10").is_ok());
     assert!(windvg::parser::parse("wvg 6 scene 10 10").is_ok());
     assert!(windvg::parser::parse("wvg 7 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 8 scene 10 10").is_err());
+    assert!(windvg::parser::parse("wvg 8 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_err());
 }
 
 #[test]
@@ -581,7 +582,8 @@ fn v5_segment_tangent_and_errors() {
 
     // version gate: 7 accepted, 8 rejected
     assert!(windvg::parser::parse("wvg 7 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 8 scene 10 10").is_err());
+    assert!(windvg::parser::parse("wvg 8 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_err());
 }
 
 // ---- v6: constants, expressions, repeat (spec §7.21) ----
@@ -844,4 +846,79 @@ fn v7_intersects_errors() {
         "wvg 7 scene 10 10\nguide a = line p1=(0,0) p2=(10,10)\nguide b = circle center=(5,5) radius=4\nfill c = circle center=intersects a b 0 radius=1 color=red\n"
     )
     .is_err());
+}
+
+// ---- v8: property defaults (spec §5.4) ----
+
+#[test]
+fn v8_color_defaults_to_black() {
+    let ops = resolve_src(
+        "wvg 8 scene 100 100\nfill a = circle center=(50,50) radius=10\nstroke b = line p1=(0,0) p2=(10,10) width=2\n",
+    )
+    .unwrap();
+    for op in &ops {
+        match op.paint {
+            windvg::resolve::RPaint::Color(c) => {
+                assert_eq!((c.r, c.g, c.b, c.a), (0.0, 0.0, 0.0, 1.0));
+            }
+            other => panic!("expected flat black, found {other:?}"),
+        }
+    }
+    // explicit color still wins
+    let ops =
+        resolve_src("wvg 8 scene 100 100\nfill a = circle center=(50,50) radius=10 color=red\n")
+            .unwrap();
+    match ops[0].paint {
+        windvg::resolve::RPaint::Color(c) => assert_eq!((c.r, c.g, c.b), (1.0, 0.0, 0.0)),
+        other => panic!("expected flat red, found {other:?}"),
+    }
+}
+
+#[test]
+fn v8_text_size_defaults_to_16() {
+    let ops = resolve_src("wvg 8 scene 100 100\ntext t = at=(10,50) content=\"hi\"\n").unwrap();
+    let meta = ops[0].text.as_ref().unwrap();
+    assert_eq!(meta.size, 16.0);
+    // explicit size still wins; positive check still applies
+    let ops =
+        resolve_src("wvg 8 scene 100 100\ntext t = at=(10,50) content=\"hi\" size=24\n").unwrap();
+    assert_eq!(ops[0].text.as_ref().unwrap().size, 24.0);
+    assert!(
+        resolve_src("wvg 8 scene 100 100\ntext t = at=(10,50) content=\"hi\" size=0\n").is_err()
+    );
+}
+
+#[test]
+fn v8_arc_start_deg_defaults_to_zero() {
+    let ops =
+        resolve_src("wvg 8 scene 100 100\nstroke a = arc center=(50,50) radius=30 sweep_deg=90\n")
+            .unwrap();
+    match &ops[0].shape {
+        windvg::resolve::RShape::Arc {
+            start_deg,
+            sweep_deg,
+            ..
+        } => {
+            assert!((start_deg - 0.0).abs() < 1e-12);
+            assert!((sweep_deg - 90.0).abs() < 1e-12);
+        }
+        other => panic!("expected arc, found {other:?}"),
+    }
+    // explicit start_deg still wins
+    let ops = resolve_src(
+        "wvg 8 scene 100 100\nstroke a = arc center=(50,50) radius=30 start_deg=45 sweep_deg=90\n",
+    )
+    .unwrap();
+    match &ops[0].shape {
+        windvg::resolve::RShape::Arc { start_deg, .. } => {
+            assert!((start_deg - 45.0).abs() < 1e-12);
+        }
+        other => panic!("expected arc, found {other:?}"),
+    }
+}
+
+#[test]
+fn v8_version_gate() {
+    assert!(windvg::parser::parse("wvg 8 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_err());
 }

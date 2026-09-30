@@ -474,7 +474,7 @@ impl Parser {
     fn parse_file(&mut self) -> Result<Document, Diag> {
         self.keyword("wvg")?;
         let version = self.integer()?;
-        if !(1..=7).contains(&version) {
+        if !(1..=8).contains(&version) {
             let t = self.toks[self.pos - 1].clone();
             return Err(Diag::new(
                 format!("unsupported format version {version}"),
@@ -525,16 +525,21 @@ impl Parser {
                 ));
             }
         };
-        self.keyword("size")?;
-        self.expect("`=`", |t| *t == Tok::Eq)?;
-        let size = self.number()?;
-        if size <= 0.0 {
-            return Err(Diag::new(
-                "text size must be positive",
-                name_span.line,
-                name_span.col,
-            ));
-        }
+        let size = if self.peek_kw("size") {
+            self.keyword("size")?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+            let v = self.number()?;
+            if v <= 0.0 {
+                return Err(Diag::new(
+                    "text size must be positive",
+                    name_span.line,
+                    name_span.col,
+                ));
+            }
+            v
+        } else {
+            16.0 // §5.4 default
+        };
         let mut font = "sans".to_string();
         if self.peek_kw("font") {
             self.keyword("font")?;
@@ -754,9 +759,13 @@ impl Parser {
                 span,
             };
         }
-        self.keyword("color")?;
-        self.expect("`=`", |t| *t == Tok::Eq)?;
-        let paint = self.parse_paint_value()?;
+        let paint = if self.peek_kw("color") {
+            self.keyword("color")?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+            self.parse_paint_value()?
+        } else {
+            Paint::Color(Color::rgb(0.0, 0.0, 0.0)) // §5.4 default black
+        };
         let mut stroke_width = 1.0;
         let mut outline_paint = None;
         if op == OpKind::OutlineFill {
@@ -1349,9 +1358,13 @@ impl Parser {
                         span.col,
                     ));
                 }
-                self.keyword("start_deg")?;
-                eq(self)?;
-                let start_deg = self.number()?;
+                let start_deg = if self.peek_kw("start_deg") {
+                    self.keyword("start_deg")?;
+                    eq(self)?;
+                    self.number()?
+                } else {
+                    0.0 // §5.4 default
+                };
                 self.keyword("sweep_deg")?;
                 eq(self)?;
                 let sweep_deg = self.number()?;
