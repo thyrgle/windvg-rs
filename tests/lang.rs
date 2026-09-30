@@ -244,7 +244,7 @@ fill m = grid motifs=[circle center=(0,0) radius=1] cols=2 rows=2 dx=10 dy=20 or
 #[test]
 fn parse_and_validation_errors() {
     let cases = [
-        ("wvg 2\nscene 10 10\n", "version"),
+        ("wvg 4\nscene 10 10\n", "version"),
         ("scene 10 10\n", "wvg"),
         ("wvg 1\n", "scene"),
         ("wvg 1\nscene 10 10\nwvg 1\n", "statement"),

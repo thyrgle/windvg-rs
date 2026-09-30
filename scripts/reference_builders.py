@@ -273,7 +273,7 @@ def build_v3_offset():
         wvd.BetweenPoint((20.0, 20.0), (60.0, 20.0), 50.0, offset=(0.0, 30.0)), 4.0), _hex("1E88E5"))
     doc.fill("cell", wvd.CircleSpec(
         wvd.GridCellPoint("lattice", 2, 1, offset=(4.0, -4.0)), 3.0), _hex("43A047"))
-    return doc.resolve()
+    return doc
 
 
 def build_v3_polar():
@@ -283,7 +283,7 @@ def build_v3_polar():
         wvd.PolarPoint((100.0, 100.0), 70.0, 30.0), 5.0), _hex("E53935"))
     doc.fill("planet2", wvd.CircleSpec(
         wvd.PolarPoint(wvd.AnchorPoint("g", pct=0.0), 55.0, 30.0), 8.0), _hex("1E88E5"))
-    return doc.resolve()
+    return doc
 
 
 def build_v3_defs():
@@ -293,7 +293,7 @@ def build_v3_defs():
     doc.fill("t1", wvd.UseSpec("tooth"), _hex("31465E"))
     doc.fill("t2", wvd.TransformSpec(
         (1.0, 0.0, 0.0, 1.0, 30.0, 0.0), wvd.UseSpec("tooth")), _hex("31465E"))
-    return doc.resolve()
+    return doc
 
 
 def build_v3_markers():
@@ -305,7 +305,8 @@ def build_v3_markers():
     doc.stroke("dim", wvd.PolySpec(closed=False, points=((180.0, 40.0), (180.0, 160.0))),
                _hex("E53935"), 1.5,
                markers=[wvd.Marker("both", "triangle", 10.0, _hex("43A047"))])
-    return doc.resolve()
+
+    return doc
 
 
 BUILDERS = {

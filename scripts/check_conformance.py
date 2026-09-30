@@ -41,7 +41,9 @@ def main() -> int:
         if not src.exists():
             print(f"SKIP {name}: missing {src}")
             continue
-        expected: bytes = build().to_tinyvg()
+        built = build()
+        scene = built.resolve() if hasattr(built, "resolve") else built
+        expected: bytes = scene.to_tinyvg()
         out = pathlib.Path("/tmp") / f"conformance_{name}.tvg"
         subprocess.run(
             [args.rust_bin, "tvg", str(src), "-o", str(out)],
