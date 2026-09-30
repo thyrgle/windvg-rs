@@ -44,11 +44,14 @@ pub const RESERVED: &[&str] = &[
     "align",
     "along",
     "arc",
+    "arc_between",
     "arc_circle",
     "arc_ellipse",
+    "bar",
     "between",
     "black",
     "blue",
+    "both",
     "c1",
     "c2",
     "ccw",
@@ -64,6 +67,8 @@ pub const RESERVED: &[&str] = &[
     "ctrl",
     "cw",
     "cyan",
+    "def",
+    "deg",
     "direction",
     "dx",
     "dy",
@@ -87,6 +92,7 @@ pub const RESERVED: &[&str] = &[
     "line",
     "linear",
     "magenta",
+    "marker",
     "matrix",
     "middle",
     "mirror_x",
@@ -96,9 +102,9 @@ pub const RESERVED: &[&str] = &[
     "none",
     "offset_pct",
     "origin",
+    "outer_radius",
     "outline",
     "outline_fill",
-    "outer_radius",
     "p1",
     "p2",
     "paint",
@@ -115,15 +121,15 @@ pub const RESERVED: &[&str] = &[
     "red",
     "regular_polygon",
     "repeat",
-    "rgba",
     "rgb",
+    "rgba",
     "rotate",
-    "rounded",
     "rotation_deg",
+    "rounded",
     "rows",
-    "sans",
     "rx",
     "ry",
+    "sans",
     "scale",
     "scene",
     "seg",
@@ -145,12 +151,13 @@ pub const RESERVED: &[&str] = &[
     "track",
     "transform",
     "translate",
-    "wvg",
+    "triangle",
+    "use",
     "white",
     "width",
+    "wvg",
     "yellow",
 ];
-
 pub fn is_reserved(name: &str) -> bool {
     RESERVED.binary_search(&name).is_ok()
 }
@@ -497,4 +504,41 @@ pub struct Document {
     pub height: f64,
     pub nodes: Vec<Node>,
     pub defs: Vec<(String, PShape)>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Appendix A is binary-searched: the list MUST stay sorted.
+    #[test]
+    fn reserved_is_sorted() {
+        for pair in RESERVED.windows(2) {
+            assert!(pair[0] < pair[1], "RESERVED out of order: {pair:?}");
+        }
+    }
+
+    #[test]
+    fn reserved_covers_the_grammar() {
+        for w in [
+            "arc_between",
+            "bar",
+            "both",
+            "content",
+            "def",
+            "deg",
+            "fill",
+            "intersects",
+            "let",
+            "marker",
+            "repeat",
+            "rounded",
+            "sans",
+            "text",
+            "triangle",
+            "use",
+        ] {
+            assert!(is_reserved(w), "`{w}` must be reserved");
+        }
+    }
 }

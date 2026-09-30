@@ -30,6 +30,7 @@ struct Parser {
     defs: HashMap<String, PShape>,
     constants: HashMap<String, f64>,
     in_repeat: bool,
+    auto_counters: HashMap<String, usize>,
 }
 
 impl Parser {
@@ -42,11 +43,17 @@ impl Parser {
             defs: HashMap::new(),
             constants: HashMap::new(),
             in_repeat: false,
+            auto_counters: HashMap::new(),
         }
     }
 
     fn peek(&self) -> &Token {
         &self.toks[self.pos.min(self.toks.len() - 1)]
+    }
+
+    fn peek_span(&self) -> Span {
+        let t = self.peek();
+        Span::new(t.line, t.col)
     }
 
     fn next(&mut self) -> Token {
@@ -245,6 +252,41 @@ impl Parser {
             span: Span::new(t.line, t.col),
         };
         Ok((pt, (x, y)))
+    }
+
+    /// v9 anonymous nodes: a node name may be omitted. Returns the explicit
+    /// name when one follows, else None (the shape keyword is then peeked
+    /// for auto-naming after the shape parses).
+    fn peek_node_name(&mut self) -> Result<Option<(String, Span)>, Diag> {
+        if let Tok::Ident(s) = &self.peek().tok {
+            if !is_reserved(s) {
+                return Ok(Some(self.bind_name("node")?));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Deterministic generated name for an anonymous node: shape keyword +
+    /// per-keyword counter, sharing the document name space (spec §5.5).
+    fn auto_name(&mut self, base: &str) -> String {
+        let counter = self.auto_counters.entry(base.to_string()).or_insert(0);
+        loop {
+            *counter += 1;
+            let candidate = format!("{base}{}", *counter);
+            if !self.names.contains(&candidate) {
+                self.names.insert(candidate.clone());
+                return candidate;
+            }
+        }
+    }
+
+    /// Consumes `kw =` when the property is named; positional values skip it.
+    fn prop(&mut self, kw: &str) -> Result<(), Diag> {
+        if self.peek_kw(kw) {
+            self.keyword(kw)?;
+            self.expect("`=`", |t| *t == Tok::Eq)?;
+        }
+        Ok(())
     }
 
     fn bind_name(&mut self, what: &str) -> Result<(String, Span), Diag> {
@@ -474,7 +516,7 @@ impl Parser {
     fn parse_file(&mut self) -> Result<Document, Diag> {
         self.keyword("wvg")?;
         let version = self.integer()?;
-        if !(1..=8).contains(&version) {
+        if !(1..=9).contains(&version) {
             let t = self.toks[self.pos - 1].clone();
             return Err(Diag::new(
                 format!("unsupported format version {version}"),
@@ -508,13 +550,14 @@ impl Parser {
     ///  [anchor=start|middle|end] [color=paint] [hidden]` (spec §7.19).
     fn parse_text_node(&mut self) -> Result<Node, Diag> {
         let kw = self.next();
-        let (name, name_span) = self.bind_name("node")?;
-        self.expect("`=`", |t| *t == Tok::Eq)?;
-        self.keyword("at")?;
-        self.expect("`=`", |t| *t == Tok::Eq)?;
+        let name_span = self.peek_span();
+        let explicit = self.peek_node_name()?;
+        if explicit.is_some() {
+            self.expect("`=", |t| *t == Tok::Eq)?;
+        }
+        self.prop("at")?;
         let at = self.parse_point()?;
-        self.keyword("content")?;
-        self.expect("`=`", |t| *t == Tok::Eq)?;
+        self.prop("content")?;
         let content = match self.next().tok {
             Tok::Str(s) => s,
             ref other => {
@@ -581,6 +624,10 @@ impl Parser {
             self.keyword("hidden")?;
             visible = false;
         }
+        let name = match explicit {
+            Some((n, _)) => n,
+            None => self.auto_name("text"),
+        };
         Ok(Node {
             id: String::new(), // assigned after parsing completes
             name,
@@ -743,9 +790,20 @@ impl Parser {
             Tok::Ident(ref s) if s == "outline_fill" => OpKind::OutlineFill,
             _ => unreachable!(),
         };
-        let (name, name_span) = self.bind_name("node")?;
-        self.expect("`=`", |t| *t == Tok::Eq)?;
+        let name_span = self.peek_span();
+        let explicit = self.peek_node_name()?;
+        if explicit.is_some() {
+            self.expect("`=", |t| *t == Tok::Eq)?;
+        }
+        let shape_kw = match &self.peek().tok {
+            Tok::Ident(s) => s.clone(),
+            _ => "node".to_string(),
+        };
         let mut shape = self.parse_shape()?;
+        let name = match explicit {
+            Some((n, _)) => n,
+            None => self.auto_name(&shape_kw),
+        };
         if self.peek_kw("transform") {
             self.keyword("transform")?;
             self.expect("`=`", |t| *t == Tok::Eq)?;
@@ -1280,11 +1338,9 @@ impl Parser {
 
         let kind = match kw.as_str() {
             "circle" => {
-                self.keyword("center")?;
-                eq(self)?;
+                self.prop("center")?;
                 let center = self.parse_point()?;
-                self.keyword("radius")?;
-                eq(self)?;
+                self.prop("radius")?;
                 let radius = self.number()?;
                 if radius <= 0.0 {
                     return Err(Diag::new(
@@ -1296,14 +1352,11 @@ impl Parser {
                 SKind::Circle { center, radius }
             }
             "ellipse" => {
-                self.keyword("center")?;
-                eq(self)?;
+                self.prop("center")?;
                 let center = self.parse_point()?;
-                self.keyword("rx")?;
-                eq(self)?;
+                self.prop("rx")?;
                 let rx = self.number()?;
-                self.keyword("ry")?;
-                eq(self)?;
+                self.prop("ry")?;
                 let ry = self.number()?;
                 if rx <= 0.0 || ry <= 0.0 {
                     return Err(Diag::new(
@@ -1326,14 +1379,11 @@ impl Parser {
                 }
             }
             "arc_between" => {
-                self.keyword("p1")?;
-                eq(self)?;
+                self.prop("p1")?;
                 let p1 = self.parse_point()?;
-                self.keyword("p2")?;
-                eq(self)?;
+                self.prop("p2")?;
                 let p2 = self.parse_point()?;
-                self.keyword("deg")?;
-                eq(self)?;
+                self.prop("deg")?;
                 let deg = self.number()?;
                 if deg == 0.0 || deg.abs() >= 360.0 {
                     return Err(Diag::new(
@@ -1345,11 +1395,9 @@ impl Parser {
                 SKind::ArcBetween { p1, p2, deg }
             }
             "arc" => {
-                self.keyword("center")?;
-                eq(self)?;
+                self.prop("center")?;
                 let center = self.parse_point()?;
-                self.keyword("radius")?;
-                eq(self)?;
+                self.prop("radius")?;
                 let radius = self.number()?;
                 if radius <= 0.0 {
                     return Err(Diag::new(
@@ -1383,8 +1431,7 @@ impl Parser {
                 }
             }
             "polygon" => {
-                self.keyword("points")?;
-                eq(self)?;
+                self.prop("points")?;
                 let points = self.point_list()?;
                 if points.len() < 3 {
                     return Err(Diag::new(
@@ -1396,8 +1443,7 @@ impl Parser {
                 SKind::Polygon { points }
             }
             "polyline" => {
-                self.keyword("points")?;
-                eq(self)?;
+                self.prop("points")?;
                 let points = self.point_list()?;
                 if points.len() < 2 {
                     return Err(Diag::new(
@@ -1409,34 +1455,28 @@ impl Parser {
                 SKind::Polyline { points }
             }
             "line" => {
-                self.keyword("p1")?;
-                eq(self)?;
+                self.prop("p1")?;
                 let p1 = self.parse_point()?;
-                self.keyword("p2")?;
-                eq(self)?;
+                self.prop("p2")?;
                 let p2 = self.parse_point()?;
                 SKind::Polyline {
                     points: vec![p1, p2],
                 }
             }
             "path" => {
-                self.keyword("subpaths")?;
-                eq(self)?;
+                self.prop("subpaths")?;
                 let subpaths = self.subpath_list()?;
                 SKind::Path { subpaths }
             }
             "compound" => {
-                self.keyword("shapes")?;
-                eq(self)?;
+                self.prop("shapes")?;
                 let shapes = self.shape_list()?;
                 SKind::Compound { shapes }
             }
             "along" => {
-                self.keyword("track")?;
-                eq(self)?;
+                self.prop("track")?;
                 let track = Box::new(self.parse_shape()?);
-                self.keyword("motifs")?;
-                eq(self)?;
+                self.prop("motifs")?;
                 let motifs = self.shape_list()?;
                 self.keyword("n")?;
                 eq(self)?;
@@ -1469,17 +1509,13 @@ impl Parser {
                 }
             }
             "polar" => {
-                self.keyword("center")?;
-                eq(self)?;
+                self.prop("center")?;
                 let center = self.parse_point()?;
-                self.keyword("motifs")?;
-                eq(self)?;
+                self.prop("motifs")?;
                 let motifs = self.shape_list()?;
-                self.keyword("n")?;
-                eq(self)?;
+                self.prop("n")?;
                 let n = self.integer()?;
-                self.keyword("radius")?;
-                eq(self)?;
+                self.prop("radius")?;
                 let radius = self.number()?;
                 if radius <= 0.0 {
                     return Err(Diag::new(
@@ -1510,8 +1546,7 @@ impl Parser {
                 }
             }
             "grid" => {
-                self.keyword("motifs")?;
-                eq(self)?;
+                self.prop("motifs")?;
                 let motifs = self.shape_list()?;
                 self.keyword("cols")?;
                 eq(self)?;
@@ -1551,8 +1586,7 @@ impl Parser {
                 }
             }
             "regular_polygon" => {
-                self.keyword("center")?;
-                eq(self)?;
+                self.prop("center")?;
                 let center = self.parse_point()?;
                 let c = match center.kind {
                     PKind::Literal(x, y) => (x, y),
@@ -1562,11 +1596,9 @@ impl Parser {
                         span.col,
                     )),
                 };
-                self.keyword("radius")?;
-                eq(self)?;
+                self.prop("radius")?;
                 let radius = self.number()?;
-                self.keyword("sides")?;
-                eq(self)?;
+                self.prop("sides")?;
                 let sides = self.integer()?;
                 if sides < 3 {
                     return Err(Diag::new(
@@ -1587,8 +1619,7 @@ impl Parser {
                 }
             }
             "star" => {
-                self.keyword("center")?;
-                eq(self)?;
+                self.prop("center")?;
                 let center = self.parse_point()?;
                 let c = match center.kind {
                     PKind::Literal(x, y) => (x, y),
@@ -1600,11 +1631,9 @@ impl Parser {
                         ))
                     }
                 };
-                self.keyword("outer_radius")?;
-                eq(self)?;
+                self.prop("outer_radius")?;
                 let outer_radius = self.number()?;
-                self.keyword("inner_radius")?;
-                eq(self)?;
+                self.prop("inner_radius")?;
                 let inner_radius = self.number()?;
                 let mut points = 5i64;
                 if self.peek_kw("points") {
@@ -1631,11 +1660,9 @@ impl Parser {
                 }
             }
             "rect" => {
-                self.keyword("center")?;
-                eq(self)?;
+                self.prop("center")?;
                 let center = self.parse_point()?;
-                self.keyword("size")?;
-                eq(self)?;
+                self.prop("size")?;
                 let size = self.literal()?.1;
                 if size.0 <= 0.0 || size.1 <= 0.0 {
                     return Err(Diag::new(
@@ -1652,11 +1679,9 @@ impl Parser {
             }
             "pie" | "chord" => {
                 let chord = kw == "chord";
-                self.keyword("center")?;
-                eq(self)?;
+                self.prop("center")?;
                 let center = self.parse_point()?;
-                self.keyword("radius")?;
-                eq(self)?;
+                self.prop("radius")?;
                 let radius = self.number()?;
                 if radius <= 0.0 {
                     return Err(Diag::new(
@@ -1665,8 +1690,10 @@ impl Parser {
                         span.col,
                     ));
                 }
-                self.keyword("start_deg")?;
-                eq(self)?;
+                if self.peek_kw("start_deg") {
+                    self.keyword("start_deg")?;
+                    eq(self)?;
+                }
                 let start_deg = self.number()?;
                 self.keyword("sweep_deg")?;
                 eq(self)?;
@@ -1701,8 +1728,7 @@ impl Parser {
                 SKind::Use { def_name }
             }
             "rounded" => {
-                self.keyword("shape")?;
-                eq(self)?;
+                self.prop("shape")?;
                 let shape = Box::new(self.parse_shape()?);
                 self.keyword("radius")?;
                 eq(self)?;

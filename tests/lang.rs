@@ -244,7 +244,7 @@ fill m = grid motifs=[circle center=(0,0) radius=1] cols=2 rows=2 dx=10 dy=20 or
 #[test]
 fn parse_and_validation_errors() {
     let cases = [
-        ("wvg 9\nscene 10 10\n", "version"),
+        ("wvg 10\nscene 10 10\n", "version"),
         ("scene 10 10\n", "wvg"),
         ("wvg 1\n", "scene"),
         ("wvg 1\nscene 10 10\nwvg 1\n", "statement"),
@@ -252,7 +252,7 @@ fn parse_and_validation_errors() {
         ("wvg 1\nscene 10 10\nfill a = arc center=(0,0) radius=5 start_deg=0 sweep_deg=360 color=red\n", "360"),
         ("wvg 1\nscene 10 10\nfill a = polygon points=[(0,0), (1,1)] color=red\n", "3 points"),
         ("wvg 1\nscene 10 10\nfill a = circle center=(0,0) radius=1 color=red\nfill a = circle center=(0,0) radius=1 color=red\n", "duplicate"),
-        ("wvg 1\nscene 10 10\nfill circle = circle center=(0,0) radius=1 color=red\n", "reserved"),
+        ("wvg 1\nscene 10 10\npaint deg = #fff\n", "reserved"),
         ("wvg 1\nscene 10 10\nfill a = circle center=(0,0) radius=1 color=blue\nfill b = circle center=(0,0) radius=1 color=a\n", "unknown paint"),
         ("wvg 1\nscene 10 10\nstroke a = line p1=@ghost 0% p2=(1,1) color=red\n", "unknown node"),
         ("wvg 1\nscene 10 10\nfill a = circle center=@a 0% radius=1 color=red\n", "cyclic"),
@@ -326,7 +326,7 @@ fn v2_transforms_parse_and_version_two_is_accepted() {
     resolve_src("wvg 1\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     resolve_src("wvg 2\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     // future versions are rejected
-    assert!(resolve_src("wvg 9\nscene 10 10\n").is_err());
+    assert!(resolve_src("wvg 10\nscene 10 10\n").is_err());
 }
 
 #[test]
@@ -513,7 +513,8 @@ fn v4_version_gates() {
     assert!(windvg::parser::parse("wvg 6 scene 10 10").is_ok());
     assert!(windvg::parser::parse("wvg 7 scene 10 10").is_ok());
     assert!(windvg::parser::parse("wvg 8 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_err());
+    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 10 scene 10 10").is_err());
 }
 
 #[test]
@@ -583,7 +584,8 @@ fn v5_segment_tangent_and_errors() {
     // version gate: 7 accepted, 8 rejected
     assert!(windvg::parser::parse("wvg 7 scene 10 10").is_ok());
     assert!(windvg::parser::parse("wvg 8 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_err());
+    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 10 scene 10 10").is_err());
 }
 
 // ---- v6: constants, expressions, repeat (spec §7.21) ----
@@ -920,5 +922,124 @@ fn v8_arc_start_deg_defaults_to_zero() {
 #[test]
 fn v8_version_gate() {
     assert!(windvg::parser::parse("wvg 8 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_err());
+    assert!(windvg::parser::parse("wvg 9 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 10 scene 10 10").is_err());
+}
+
+// ---- v9: anonymous nodes + positional shape properties (spec §5.5/§5.6) ----
+
+#[test]
+fn v9_anonymous_nodes() {
+    let mut doc = windvg::parser::parse(
+        "wvg 9 scene 200 200\nfill circle (100,100) 40 color=red\nstroke line (0,0) (10,10) width=2\ntext (10,50) \"hi\"\n",
+    )
+    .unwrap();
+    windvg::parser::assign_ids(&mut doc);
+    let names: Vec<String> = doc.nodes.iter().map(|n| n.name.clone()).collect();
+    assert_eq!(
+        names,
+        vec!["circle1", "line1", "text1"],
+        "per-keyword counters"
+    );
+
+    // explicit and anonymous share the name space: the auto-name bumps
+    // past an explicitly taken name instead of erroring
+    let mut doc2 = windvg::parser::parse(
+        "wvg 9 scene 200 200\nfill circle1 = circle (0,0) 1 color=red\nfill circle (5,5) 1 color=red\n",
+    )
+    .unwrap();
+    windvg::parser::assign_ids(&mut doc2);
+    assert_eq!(doc2.nodes[1].name, "circle2", "auto-name skips taken names");
+
+    // text: keyword + counter
+    let mut doc3 = windvg::parser::parse("wvg 9 scene 100 100\ntext (10,10) \"a\"\n").unwrap();
+    windvg::parser::assign_ids(&mut doc3);
+    assert_eq!(doc3.nodes[0].name, "text1");
+}
+
+#[test]
+fn v9_positional_shapes_parse_like_named() {
+    // every positional form must resolve identically to its named twin
+    let pairs: &[(&str, &str)] = &[
+        (
+            "fill a = circle center=(100,100) radius=80 color=red",
+            "fill circle (100,100) 80 color=red",
+        ),
+        (
+            "stroke a = line p1=(0,0) p2=(10,10) color=red",
+            "stroke line (0,0) (10,10) color=red",
+        ),
+        (
+            "fill a = rect center=(50,50) size=(60,30) color=red",
+            "fill rect (50,50) (60,30) color=red",
+        ),
+        (
+            "fill a = ellipse center=(50,50) rx=40 ry=20 color=red",
+            "fill ellipse (50,50) 40 20 color=red",
+        ),
+        (
+            "stroke a = arc center=(50,50) radius=30 start_deg=45 sweep_deg=90 color=red",
+            "stroke arc (50,50) 30 start_deg=45 sweep_deg=90 color=red",
+        ),
+        (
+            "fill a = pie center=(50,50) radius=30 start_deg=0 sweep_deg=135 color=red",
+            "fill pie (50,50) 30 start_deg=0 sweep_deg=135 color=red",
+        ),
+        (
+            "stroke a = arc_between p1=(40,140) p2=(180,140) deg=90 color=red width=1",
+            "stroke arc_between (40,140) (180,140) deg=90 color=red width=1",
+        ),
+        (
+            "fill a = regular_polygon center=(50,50) radius=30 sides=6 color=red",
+            "fill regular_polygon (50,50) 30 sides=6 color=red",
+        ),
+        (
+            "fill a = star center=(50,50) outer_radius=30 inner_radius=12 points=5 color=red",
+            "fill star (50,50) 30 12 points=5 color=red",
+        ),
+        (
+            "fill a = rounded shape=polygon points=[(10,10), (30,10), (30,30), (10,30)] radius=4 color=red",
+            "fill rounded polygon [(10,10), (30,10), (30,30), (10,30)] radius=4 color=red",
+        ),
+        (
+            "stroke a = along track=circle center=(100,100) radius=57 motifs=[line p1=(-8,0) p2=(8,0)] n=9 align=tangent color=red width=1",
+            "stroke along circle (100,100) 57 [line (-8,0) (8,0)] n=9 align=tangent color=red width=1",
+        ),
+        (
+            "fill a = polar center=(100,100) motifs=[circle center=(0,0) radius=5] n=8 radius=40 color=red",
+            "fill polar (100,100) [circle (0,0) 5] n=8 radius=40 color=red",
+        ),
+        (
+            "fill a = grid motifs=[rect center=(0,0) size=(10,10)] cols=4 rows=3 dx=20 dy=20 color=red",
+            "fill grid [rect (0,0) (10,10)] cols=4 rows=3 dx=20 dy=20 color=red",
+        ),
+        (
+            "fill a = compound shapes=[circle center=(0,0) radius=10, circle center=(5,5) radius=10] color=red",
+            "fill compound [circle (0,0) 10, circle (5,5) 10] color=red",
+        ),
+    ];
+    for (named, positional) in pairs {
+        let a = resolve_src(&format!("wvg 9 scene 200 200\n{named}\n")).unwrap();
+        let b = resolve_src(&format!("wvg 9 scene 200 200\n{positional}\n")).unwrap();
+        let ja = windvg::json::ops_json(&a);
+        let jb = windvg::json::ops_json(&b);
+        assert_eq!(ja, jb, "positional form diverged:\n{named}\n{positional}");
+    }
+}
+
+#[test]
+fn v9_text_positional_and_references_still_need_names() {
+    let ops = resolve_src("wvg 9 scene 100 100\ntext (10,50) \"hi\" size=24\n").unwrap();
+    let meta = ops[0].text.as_ref().unwrap();
+    assert_eq!(meta.content, "hi");
+    assert_eq!(meta.size, 24.0);
+    assert_eq!(meta.at.x, 10.0);
+
+    // generated names are referenceable but order-dependent (§5.5):
+    // possible, discouraged for anything load-bearing
+    let ops = resolve_src(
+        "wvg 9 scene 100 100\nfill circle (50,50) 40 color=red\nfill d = circle center=@circle1 100% radius=2 color=red\n",
+    )
+    .unwrap();
+    assert_eq!(ops.len(), 2);
 }
