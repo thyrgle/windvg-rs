@@ -271,10 +271,25 @@ impl Parser {
     fn is_shape_keyword(kw: &str) -> bool {
         matches!(
             kw,
-            "circle" | "ellipse" | "arc" | "arc_between" | "rect" | "line"
-                | "polygon" | "polyline" | "path" | "compound" | "along"
-                | "polar" | "grid" | "regular_polygon" | "star" | "rounded"
-                | "pie" | "chord" | "use"
+            "circle"
+                | "ellipse"
+                | "arc"
+                | "arc_between"
+                | "rect"
+                | "line"
+                | "polygon"
+                | "polyline"
+                | "path"
+                | "compound"
+                | "along"
+                | "polar"
+                | "grid"
+                | "regular_polygon"
+                | "star"
+                | "rounded"
+                | "pie"
+                | "chord"
+                | "use"
         )
     }
 
@@ -813,9 +828,7 @@ impl Parser {
         };
         if is_reserved(&shape_kw) && !Self::is_shape_keyword(&shape_kw) {
             return Err(Diag::new(
-                format!(
-                    "`{shape_kw}` is a reserved word and cannot be a node name"
-                ),
+                format!("`{shape_kw}` is a reserved word and cannot be a node name"),
                 name_span.line,
                 name_span.col,
             ));

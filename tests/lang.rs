@@ -1048,10 +1048,9 @@ fn v9_text_positional_and_references_still_need_names() {
 fn v9_reserved_name_gets_a_clear_error() {
     // `p1` is reserved (a line prop): the error must say so, not
     // "expected a shape"
-    let err = resolve_src(
-        "wvg 9 scene 100 100\nfill p1 = circle center=(10,10) radius=2 color=red\n",
-    )
-    .unwrap_err();
+    let err =
+        resolve_src("wvg 9 scene 100 100\nfill p1 = circle center=(10,10) radius=2 color=red\n")
+            .unwrap_err();
     assert!(
         err.msg.contains("reserved") && err.msg.contains("p1"),
         "error should name the reserved word: {}",
