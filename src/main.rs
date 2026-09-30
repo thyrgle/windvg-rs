@@ -136,32 +136,34 @@ fn main() -> ExitCode {
             Err(e) => fail(&args.file, e),
         },
         "tvg" => match windvg::resolve::resolve(&doc) {
-            Ok(ops) => match windvg::tvg::encode(&ops, doc.width, doc.height, args.scale, args.drop_text) {
-                Ok(bytes) => match &args.out {
-                    Some(p) => {
-                        if let Err(e) = std::fs::write(p, &bytes) {
-                            eprintln!("{e}");
-                            return ExitCode::from(1);
-                        }
-                        println!("wrote {} ({} bytes)", p, bytes.len());
-                        ExitCode::SUCCESS
-                    }
-                    None => {
-                        use std::io::Write;
-                        std::io::stdout()
-                            .write_all(&bytes)
-                            .map(|_| ExitCode::SUCCESS)
-                            .unwrap_or_else(|e| {
+            Ok(ops) => {
+                match windvg::tvg::encode(&ops, doc.width, doc.height, args.scale, args.drop_text) {
+                    Ok(bytes) => match &args.out {
+                        Some(p) => {
+                            if let Err(e) = std::fs::write(p, &bytes) {
                                 eprintln!("{e}");
-                                ExitCode::from(1)
-                            })
+                                return ExitCode::from(1);
+                            }
+                            println!("wrote {} ({} bytes)", p, bytes.len());
+                            ExitCode::SUCCESS
+                        }
+                        None => {
+                            use std::io::Write;
+                            std::io::stdout()
+                                .write_all(&bytes)
+                                .map(|_| ExitCode::SUCCESS)
+                                .unwrap_or_else(|e| {
+                                    eprintln!("{e}");
+                                    ExitCode::from(1)
+                                })
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("{}: {e}", args.file);
+                        ExitCode::from(1)
                     }
-                },
-                Err(e) => {
-                    eprintln!("{}: {e}", args.file);
-                    ExitCode::from(1)
                 }
-            },
+            }
             Err(e) => fail(&args.file, e),
         },
         other => {

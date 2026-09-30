@@ -1088,10 +1088,7 @@ impl<'a> Env<'a> {
                     // unit tangent at the travel position, signed like the
                     // Python Anchor.tangent (spec §7.20)
                     let dist = (d0 + delta).rem_euclid(shape.perimeter());
-                    let t = shape
-                        .tangent_at_distance(dist)
-                        .map_err(wrap)?
-                        .mul(signed);
+                    let t = shape.tangent_at_distance(dist).map_err(wrap)?.mul(signed);
                     result = apply_tangent(result, t.x, t.y, *len, *deg);
                 }
                 if let Some((dx, dy)) = offset {

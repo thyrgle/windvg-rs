@@ -537,10 +537,10 @@ group {
 fn v5_tangent_resolves_all_four_directions() {
     // cw circle at 0% = (160,100); travel = (0,1) (down)
     let cases: &[(&str, (f64, f64))] = &[
-        ("tangent 20", (160.0, 120.0)),          // with travel
-        ("tangent 20 deg 90", (140.0, 100.0)),   // right-hand normal
-        ("tangent 20 deg 180", (160.0, 80.0)),   // reverse
-        ("tangent -20", (160.0, 80.0)),          // negative = reverse
+        ("tangent 20", (160.0, 120.0)),                 // with travel
+        ("tangent 20 deg 90", (140.0, 100.0)),          // right-hand normal
+        ("tangent 20 deg 180", (160.0, 80.0)),          // reverse
+        ("tangent -20", (160.0, 80.0)),                 // negative = reverse
         ("tangent 20 deg 90 + (5, 0)", (145.0, 100.0)), // composes with offset
     ];
     for (clause, want) in cases {
@@ -568,7 +568,10 @@ fn v5_segment_tangent_and_errors() {
         other => panic!("expected circle, found {other:?}"),
     };
     // travel is +x; right-hand normal is +y
-    assert!((x - 90.0).abs() < 1e-9 && (y - 50.0).abs() < 1e-9, "({x}, {y})");
+    assert!(
+        (x - 90.0).abs() < 1e-9 && (y - 50.0).abs() < 1e-9,
+        "({x}, {y})"
+    );
 
     // zero-length segment tangent is an error
     let bad = "wvg 5 scene 200 200\nstroke rail = polygon points=[(40,40), (40,40), (80,40)] color=red\nfill d = circle center=@rail seg 0 50% tangent 10 radius=1 color=red\n";

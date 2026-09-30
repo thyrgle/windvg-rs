@@ -243,11 +243,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diag> {
                         }
                         '\\' => {
                             let Some(&esc) = b.get(i + 1) else {
-                                return Err(Diag::new(
-                                    "unterminated string",
-                                    line,
-                                    start_col,
-                                ));
+                                return Err(Diag::new("unterminated string", line, start_col));
                             };
                             match esc {
                                 '"' | '\\' => text.push(esc),

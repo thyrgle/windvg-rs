@@ -16,7 +16,9 @@ fn fmt3(v: f64) -> String {
 }
 
 fn escape_text(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn font_family(font: &str) -> &str {
@@ -26,11 +28,7 @@ fn font_family(font: &str) -> &str {
     }
 }
 
-fn text_element(
-    op: &ROp,
-    meta: &crate::resolve::TextMeta,
-    gradient_id: Option<&str>,
-) -> String {
+fn text_element(op: &ROp, meta: &crate::resolve::TextMeta, gradient_id: Option<&str>) -> String {
     let shift = match meta.anchor.as_str() {
         "middle" => 0.5,
         "end" => 1.0,
@@ -161,177 +159,118 @@ pub fn render(ops: &[ROp], width: f64, height: f64) -> String {
         let elements: Vec<String> = if let Some(meta) = &op.text {
             vec![text_element(op, meta, gradient_fill.as_deref())]
         } else {
-        match (&op.shape, op.kind) {
-            (RShape::Polygon(pts), _) => {
-                let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
-                vec![format!(
-                    "<polygon{} points=\"{}\"/>",
-                    attrs,
-                    points_attr(pts)
-                )]
-            }
-            (RShape::Polyline(pts), _) => {
-                let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
-                vec![format!(
-                    "<polyline{} points=\"{}\"/>",
-                    attrs,
-                    points_attr(pts)
-                )]
-            }
-            (RShape::Circle { c, r }, _) => {
-                let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
-                vec![format!(
-                    "<circle{} cx=\"{}\" cy=\"{}\" r=\"{}\"/>",
-                    attrs,
-                    fmt_f(c.x),
-                    fmt_f(c.y),
-                    fmt_f(*r)
-                )]
-            }
-            (
-                RShape::Ellipse {
-                    c,
-                    rx,
-                    ry,
-                    rotation_deg,
-                    ..
-                },
-                _,
-            ) => {
-                let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
-                let rot = if *rotation_deg != 0.0 {
-                    format!(
-                        " transform=\"rotate({} {} {})\"",
-                        fmt_f(*rotation_deg),
+            match (&op.shape, op.kind) {
+                (RShape::Polygon(pts), _) => {
+                    let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
+                    vec![format!(
+                        "<polygon{} points=\"{}\"/>",
+                        attrs,
+                        points_attr(pts)
+                    )]
+                }
+                (RShape::Polyline(pts), _) => {
+                    let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
+                    vec![format!(
+                        "<polyline{} points=\"{}\"/>",
+                        attrs,
+                        points_attr(pts)
+                    )]
+                }
+                (RShape::Circle { c, r }, _) => {
+                    let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
+                    vec![format!(
+                        "<circle{} cx=\"{}\" cy=\"{}\" r=\"{}\"/>",
+                        attrs,
                         fmt_f(c.x),
-                        fmt_f(c.y)
-                    )
-                } else {
-                    String::new()
-                };
-                vec![format!(
-                    "<ellipse{} cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\"{}/>",
-                    attrs,
-                    fmt_f(c.x),
-                    fmt_f(c.y),
-                    fmt_f(*rx),
-                    fmt_f(*ry),
-                    rot
-                )]
-            }
-            (
-                RShape::Arc {
-                    c,
-                    r,
-                    start_deg,
-                    sweep_deg,
-                },
-                _,
-            ) => {
-                let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
-                let rad0 = start_deg.to_radians();
-                let rad1 = (start_deg + sweep_deg).to_radians();
-                let s = Pt::new(c.x + r * rad0.cos(), c.y + r * rad0.sin());
-                let e = Pt::new(c.x + r * rad1.cos(), c.y + r * rad1.sin());
-                let large = if sweep_deg.abs() > 180.0 { 1 } else { 0 };
-                let sweep = if *sweep_deg > 0.0 { 1 } else { 0 };
-                vec![format!(
-                    "<path{} d=\"M {} {} A {} {} 0 {} {} {} {}\"/>",
-                    attrs,
-                    fmt_f(s.x),
-                    fmt_f(s.y),
-                    fmt_f(*r),
-                    fmt_f(*r),
-                    large,
-                    sweep,
-                    fmt_f(e.x),
-                    fmt_f(e.y)
-                )]
-            }
-            (RShape::Path { subpaths, .. }, _) => {
-                let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
-                vec![format!("<path{} d=\"{}\"/>", attrs, path_attr(subpaths))]
-            }
-            (RShape::Compound(subs), OpKind::Stroke) => subs
-                .iter()
-                .map(|s| match s {
-                    RShape::Polygon(pts) => {
-                        let attrs = common_attrs(&fill, &stroke, op.width, "");
-                        format!("<polygon{} points=\"{}\"/>", attrs, points_attr(pts))
-                    }
-                    RShape::Polyline(pts) => {
-                        let attrs = common_attrs(&fill, &stroke, op.width, "");
-                        format!("<polyline{} points=\"{}\"/>", attrs, points_attr(pts))
-                    }
-                    RShape::Circle { c, r } => {
-                        let attrs = common_attrs(&fill, &stroke, op.width, "");
-                        format!(
-                            "<circle{} cx=\"{}\" cy=\"{}\" r=\"{}\"/>",
-                            attrs,
-                            fmt_f(c.x),
-                            fmt_f(c.y),
-                            fmt_f(*r)
-                        )
-                    }
+                        fmt_f(c.y),
+                        fmt_f(*r)
+                    )]
+                }
+                (
                     RShape::Ellipse {
                         c,
                         rx,
                         ry,
                         rotation_deg,
                         ..
-                    } => {
-                        let attrs = common_attrs(&fill, &stroke, op.width, "");
-                        let rot = if *rotation_deg != 0.0 {
-                            format!(
-                                " transform=\"rotate({} {} {})\"",
-                                fmt_f(*rotation_deg),
-                                fmt_f(c.x),
-                                fmt_f(c.y)
-                            )
-                        } else {
-                            String::new()
-                        };
+                    },
+                    _,
+                ) => {
+                    let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
+                    let rot = if *rotation_deg != 0.0 {
                         format!(
-                            "<ellipse{} cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\"{}/>",
-                            attrs,
+                            " transform=\"rotate({} {} {})\"",
+                            fmt_f(*rotation_deg),
                             fmt_f(c.x),
-                            fmt_f(c.y),
-                            fmt_f(*rx),
-                            fmt_f(*ry),
-                            rot
+                            fmt_f(c.y)
                         )
-                    }
-                    RShape::Path { subpaths, .. } => {
-                        let attrs = common_attrs(&fill, &stroke, op.width, "");
-                        format!("<path{} d=\"{}\"/>", attrs, path_attr(subpaths))
-                    }
-                    _ => String::new(),
-                })
-                .collect(),
-            (RShape::Compound(subs), _) => {
-                // even-odd compound fill: flatten all subpaths into one path
-                let all: Vec<RSubPath> = subs
+                    } else {
+                        String::new()
+                    };
+                    vec![format!(
+                        "<ellipse{} cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\"{}/>",
+                        attrs,
+                        fmt_f(c.x),
+                        fmt_f(c.y),
+                        fmt_f(*rx),
+                        fmt_f(*ry),
+                        rot
+                    )]
+                }
+                (
+                    RShape::Arc {
+                        c,
+                        r,
+                        start_deg,
+                        sweep_deg,
+                    },
+                    _,
+                ) => {
+                    let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
+                    let rad0 = start_deg.to_radians();
+                    let rad1 = (start_deg + sweep_deg).to_radians();
+                    let s = Pt::new(c.x + r * rad0.cos(), c.y + r * rad0.sin());
+                    let e = Pt::new(c.x + r * rad1.cos(), c.y + r * rad1.sin());
+                    let large = if sweep_deg.abs() > 180.0 { 1 } else { 0 };
+                    let sweep = if *sweep_deg > 0.0 { 1 } else { 0 };
+                    vec![format!(
+                        "<path{} d=\"M {} {} A {} {} 0 {} {} {} {}\"/>",
+                        attrs,
+                        fmt_f(s.x),
+                        fmt_f(s.y),
+                        fmt_f(*r),
+                        fmt_f(*r),
+                        large,
+                        sweep,
+                        fmt_f(e.x),
+                        fmt_f(e.y)
+                    )]
+                }
+                (RShape::Path { subpaths, .. }, _) => {
+                    let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
+                    vec![format!("<path{} d=\"{}\"/>", attrs, path_attr(subpaths))]
+                }
+                (RShape::Compound(subs), OpKind::Stroke) => subs
                     .iter()
-                    .flat_map(|s| match s {
-                        RShape::Path { subpaths, .. } => subpaths.clone(),
-                        RShape::Circle { c, r } => vec![RSubPath {
-                            start: Pt::new(c.x + r, c.y),
-                            instructions: vec![
-                                RInstr::ArcCircle {
-                                    radius: *r,
-                                    large: false,
-                                    sweep_cw: true,
-                                    to: Pt::new(c.x - r, c.y),
-                                },
-                                RInstr::ArcCircle {
-                                    radius: *r,
-                                    large: false,
-                                    sweep_cw: true,
-                                    to: Pt::new(c.x + r, c.y),
-                                },
-                                RInstr::Close,
-                            ],
-                        }],
+                    .map(|s| match s {
+                        RShape::Polygon(pts) => {
+                            let attrs = common_attrs(&fill, &stroke, op.width, "");
+                            format!("<polygon{} points=\"{}\"/>", attrs, points_attr(pts))
+                        }
+                        RShape::Polyline(pts) => {
+                            let attrs = common_attrs(&fill, &stroke, op.width, "");
+                            format!("<polyline{} points=\"{}\"/>", attrs, points_attr(pts))
+                        }
+                        RShape::Circle { c, r } => {
+                            let attrs = common_attrs(&fill, &stroke, op.width, "");
+                            format!(
+                                "<circle{} cx=\"{}\" cy=\"{}\" r=\"{}\"/>",
+                                attrs,
+                                fmt_f(c.x),
+                                fmt_f(c.y),
+                                fmt_f(*r)
+                            )
+                        }
                         RShape::Ellipse {
                             c,
                             rx,
@@ -339,44 +278,103 @@ pub fn render(ops: &[ROp], width: f64, height: f64) -> String {
                             rotation_deg,
                             ..
                         } => {
-                            let p0 =
-                                crate::resolve::ellipse_point(*c, *rx, *ry, *rotation_deg, 0.0);
-                            let p1 = crate::resolve::ellipse_point(
-                                *c,
-                                *rx,
-                                *ry,
-                                *rotation_deg,
-                                std::f64::consts::PI,
-                            );
-                            let arc = |to: Pt| RInstr::ArcEllipse {
-                                rx: *rx,
-                                ry: *ry,
-                                rotation_deg: *rotation_deg,
-                                large: false,
-                                sweep_cw: true,
-                                to,
+                            let attrs = common_attrs(&fill, &stroke, op.width, "");
+                            let rot = if *rotation_deg != 0.0 {
+                                format!(
+                                    " transform=\"rotate({} {} {})\"",
+                                    fmt_f(*rotation_deg),
+                                    fmt_f(c.x),
+                                    fmt_f(c.y)
+                                )
+                            } else {
+                                String::new()
                             };
-                            vec![RSubPath {
-                                start: p0,
-                                instructions: vec![arc(p1), arc(p0), RInstr::Close],
-                            }]
+                            format!(
+                                "<ellipse{} cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\"{}/>",
+                                attrs,
+                                fmt_f(c.x),
+                                fmt_f(c.y),
+                                fmt_f(*rx),
+                                fmt_f(*ry),
+                                rot
+                            )
                         }
-                        RShape::Polygon(pts) => {
-                            let mut instructions: Vec<RInstr> =
-                                pts[1..].iter().map(|p| RInstr::Line { to: *p }).collect();
-                            instructions.push(RInstr::Close);
-                            vec![RSubPath {
-                                start: pts[0],
-                                instructions,
-                            }]
+                        RShape::Path { subpaths, .. } => {
+                            let attrs = common_attrs(&fill, &stroke, op.width, "");
+                            format!("<path{} d=\"{}\"/>", attrs, path_attr(subpaths))
                         }
-                        _ => vec![],
+                        _ => String::new(),
                     })
-                    .collect();
-                let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
-                vec![format!("<path{} d=\"{}\"/>", attrs, path_attr(&all))]
+                    .collect(),
+                (RShape::Compound(subs), _) => {
+                    // even-odd compound fill: flatten all subpaths into one path
+                    let all: Vec<RSubPath> = subs
+                        .iter()
+                        .flat_map(|s| match s {
+                            RShape::Path { subpaths, .. } => subpaths.clone(),
+                            RShape::Circle { c, r } => vec![RSubPath {
+                                start: Pt::new(c.x + r, c.y),
+                                instructions: vec![
+                                    RInstr::ArcCircle {
+                                        radius: *r,
+                                        large: false,
+                                        sweep_cw: true,
+                                        to: Pt::new(c.x - r, c.y),
+                                    },
+                                    RInstr::ArcCircle {
+                                        radius: *r,
+                                        large: false,
+                                        sweep_cw: true,
+                                        to: Pt::new(c.x + r, c.y),
+                                    },
+                                    RInstr::Close,
+                                ],
+                            }],
+                            RShape::Ellipse {
+                                c,
+                                rx,
+                                ry,
+                                rotation_deg,
+                                ..
+                            } => {
+                                let p0 =
+                                    crate::resolve::ellipse_point(*c, *rx, *ry, *rotation_deg, 0.0);
+                                let p1 = crate::resolve::ellipse_point(
+                                    *c,
+                                    *rx,
+                                    *ry,
+                                    *rotation_deg,
+                                    std::f64::consts::PI,
+                                );
+                                let arc = |to: Pt| RInstr::ArcEllipse {
+                                    rx: *rx,
+                                    ry: *ry,
+                                    rotation_deg: *rotation_deg,
+                                    large: false,
+                                    sweep_cw: true,
+                                    to,
+                                };
+                                vec![RSubPath {
+                                    start: p0,
+                                    instructions: vec![arc(p1), arc(p0), RInstr::Close],
+                                }]
+                            }
+                            RShape::Polygon(pts) => {
+                                let mut instructions: Vec<RInstr> =
+                                    pts[1..].iter().map(|p| RInstr::Line { to: *p }).collect();
+                                instructions.push(RInstr::Close);
+                                vec![RSubPath {
+                                    start: pts[0],
+                                    instructions,
+                                }]
+                            }
+                            _ => vec![],
+                        })
+                        .collect();
+                    let attrs = common_attrs(&fill, &stroke, op.width, fill_rule);
+                    vec![format!("<path{} d=\"{}\"/>", attrs, path_attr(&all))]
+                }
             }
-        }
         };
 
         for e in elements {
