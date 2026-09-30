@@ -93,6 +93,10 @@ fn jstr(s: &str) -> String {
 fn point_json(p: &PPoint) -> String {
     match &p.kind {
         PKind::Literal(x, y) => num_list((*x, *y)),
+        PKind::Intersects { a, b, k } => format!(
+            "{{\"intersects\": {{\"a\": \"{}\", \"b\": \"{}\", \"k\": {}}}}}",
+            a, b, k
+        ),
         PKind::Anchor {
             node,
             pct,
@@ -211,6 +215,12 @@ fn shape_json(s: &PShape) -> String {
             f(*radius),
             f(*start_deg),
             f(*sweep_deg)
+        ),
+        SKind::ArcBetween { p1, p2, deg } => format!(
+            "{{\"kind\": \"arc_between\", \"p1\": {}, \"p2\": {}, \"deg\": {}}}",
+            point_json(p1),
+            point_json(p2),
+            f(*deg)
         ),
         SKind::Polygon { points } => points_list_json("polygon", points),
         SKind::Polyline { points } => points_list_json("polyline", points),

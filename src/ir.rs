@@ -81,6 +81,7 @@ pub const RESERVED: &[&str] = &[
     "guide",
     "hidden",
     "inner_radius",
+    "intersects",
     "large",
     "let",
     "line",
@@ -288,6 +289,11 @@ pub enum PKind {
         radius: f64,
         deg: f64,
     },
+    Intersects {
+        a: String,
+        b: String,
+        k: i64,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -357,6 +363,11 @@ pub enum SKind {
         radius: f64,
         start_deg: f64,
         sweep_deg: f64,
+    },
+    ArcBetween {
+        p1: PPoint,
+        p2: PPoint,
+        deg: f64,
     },
     Polygon {
         points: Vec<PPoint>,

@@ -415,6 +415,34 @@ def build_v6_repeat():
     return doc
 
 
+# ---- v7 golden: arc_between + intersects ----
+
+def build_v7_geometry():
+    doc = Document(220.0, 160.0)
+    doc.stroke(
+        "rail",
+        wvd.PolySpec(closed=False, points=((30.0, 110.0), (190.0, 50.0))),
+        _hex("000000"), 1.0, visible=False,
+    )
+    doc.fill("hoop", wv.Circle((110.0, 80.0), 45.0), wv.rgb(0, 0, 0), visible=False)
+    r = wvd._Resolver(doc)
+    c1 = r.resolve_point(wvd.IntersectsPoint("rail", "hoop", 1))
+    c2 = r.resolve_point(wvd.IntersectsPoint("rail", "hoop", 2))
+    doc.fill("hit1", wv.Circle((c1.x, c1.y), 4.0), _hex("E53935"))
+    doc.fill("hit2", wv.Circle((c2.x, c2.y), 4.0), _hex("43A047"))
+    doc.stroke(
+        "deck",
+        wvd.ArcBetweenSpec((40.0, 120.0), (180.0, 120.0), 90.0),
+        _hex("1E88E5"), 3.0,
+    )
+    doc.stroke(
+        "under",
+        wvd.ArcBetweenSpec((40.0, 120.0), (180.0, 120.0), -60.0),
+        _hex("FDD835"), 2.0,
+    )
+    return doc
+
+
 BUILDERS = {
     "smoke": build_smoke,
     "anchors": build_anchors,
@@ -433,4 +461,5 @@ BUILDERS = {
     "v5_tangent": build_v5_tangent,
     "v6_consts": build_v6_consts,
     "v6_repeat": build_v6_repeat,
+    "v7_geometry": build_v7_geometry,
 }

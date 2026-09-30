@@ -54,6 +54,11 @@ fn golden_v6_repeat() {
     run_case("v6_repeat");
 }
 
+#[test]
+fn golden_v7_geometry() {
+    run_case("v7_geometry");
+}
+
 /// Text documents (tier B) conform via ops JSON + SVG, not .tvg bytes.
 #[test]
 fn golden_v4_text_svg_and_metadata() {

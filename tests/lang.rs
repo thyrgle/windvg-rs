@@ -326,7 +326,7 @@ fn v2_transforms_parse_and_version_two_is_accepted() {
     resolve_src("wvg 1\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     resolve_src("wvg 2\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     // future versions are rejected
-    assert!(resolve_src("wvg 7\nscene 10 10\n").is_err());
+    assert!(resolve_src("wvg 8\nscene 10 10\n").is_err());
 }
 
 #[test]
@@ -511,7 +511,8 @@ fn v4_version_gates() {
     assert!(windvg::parser::parse("wvg 4 scene 10 10").is_ok());
     assert!(windvg::parser::parse("wvg 5 scene 10 10").is_ok());
     assert!(windvg::parser::parse("wvg 6 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 7 scene 10 10").is_err());
+    assert!(windvg::parser::parse("wvg 7 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 8 scene 10 10").is_err());
 }
 
 #[test]
@@ -578,9 +579,9 @@ fn v5_segment_tangent_and_errors() {
     let bad = "wvg 5 scene 200 200\nstroke rail = polygon points=[(40,40), (40,40), (80,40)] color=red\nfill d = circle center=@rail seg 0 50% tangent 10 radius=1 color=red\n";
     assert!(resolve_src(bad).is_err());
 
-    // version gate: 6 accepted, 7 rejected
-    assert!(windvg::parser::parse("wvg 6 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 7 scene 10 10").is_err());
+    // version gate: 7 accepted, 8 rejected
+    assert!(windvg::parser::parse("wvg 7 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 8 scene 10 10").is_err());
 }
 
 // ---- v6: constants, expressions, repeat (spec §7.21) ----
@@ -747,6 +748,100 @@ fn v6_errors() {
     // constants share the namespace with nodes
     assert!(resolve_src(
         "wvg 6 scene 10 10\nlet a = 1\nfill a = circle center=(1,1) radius=1 color=red\n"
+    )
+    .is_err());
+}
+
+// ---- v7: arc_between + intersects (spec §7.22/§7.23) ----
+
+#[test]
+fn v7_arc_between_math() {
+    let ops = resolve_src(
+        "wvg 7 scene 10 10\nstroke deck = arc_between p1=(40,120) p2=(180,120) deg=90 color=red width=1\n",
+    )
+    .unwrap();
+    match &ops[0].shape {
+        windvg::resolve::RShape::Arc {
+            c,
+            r,
+            start_deg,
+            sweep_deg,
+        } => {
+            assert!((c.x - 110.0).abs() < 1e-9 && (c.y - 190.0).abs() < 1e-9);
+            assert!((r - 70.0 * std::f64::consts::SQRT_2).abs() < 1e-9);
+            assert!((start_deg - (-135.0)).abs() < 1e-9);
+            assert!((sweep_deg - 90.0).abs() < 1e-9);
+        }
+        other => panic!("expected arc, found {other:?}"),
+    }
+}
+
+#[test]
+fn v7_arc_between_signs_and_validation() {
+    // negative sweep bulges the other way
+    let ops = resolve_src(
+        "wvg 7 scene 10 10\nstroke a = arc_between p1=(40,120) p2=(180,120) deg=-60 color=red width=1\n",
+    )
+    .unwrap();
+    match &ops[0].shape {
+        windvg::resolve::RShape::Arc {
+            c, r, sweep_deg, ..
+        } => {
+            assert!((r - 140.0).abs() < 1e-9);
+            assert!(c.y < 120.0);
+            assert!((sweep_deg + 60.0).abs() < 1e-9);
+        }
+        other => panic!("expected arc, found {other:?}"),
+    }
+    for bad in [
+        "wvg 7 scene 10 10\nstroke a = arc_between p1=(5,5) p2=(5,5) deg=90 color=red\n",
+        "wvg 7 scene 10 10\nstroke a = arc_between p1=(0,0) p2=(10,0) deg=0 color=red\n",
+        "wvg 7 scene 10 10\nstroke a = arc_between p1=(0,0) p2=(10,0) deg=360 color=red\n",
+    ] {
+        assert!(resolve_src(bad).is_err(), "should reject: {bad}");
+    }
+}
+
+#[test]
+fn v7_intersects_finds_crossings_in_order() {
+    let src = "
+wvg 7
+scene 220 160
+
+guide rail = line p1=(30,110) p2=(190,50)
+guide hoop = circle center=(110,80) radius=45
+fill hit1 = circle center=intersects rail hoop radius=3 color=red
+fill hit2 = circle center=intersects rail hoop 2 radius=3 color=blue
+";
+    let ops = resolve_src(src).unwrap();
+    assert_eq!(ops.len(), 2);
+    let (a, b) = match (&ops[0].shape, &ops[1].shape) {
+        (RShape::Circle { c: a, .. }, RShape::Circle { c: b, .. }) => (*a, *b),
+        other => panic!("expected circles, found {other:?}"),
+    };
+    assert!(a.x < b.x, "chain order runs along the rail: {a:?} {b:?}");
+    // both on the hoop
+    for p in [a, b] {
+        let d = ((p.x - 110.0).powi(2) + (p.y - 80.0).powi(2)).sqrt();
+        assert!((d - 45.0).abs() < 0.2, "not on the hoop: {d}");
+    }
+}
+
+#[test]
+fn v7_intersects_errors() {
+    // missing k-th crossing
+    assert!(resolve_src(
+        "wvg 7 scene 10 10\nguide a = line p1=(0,0) p2=(10,10)\nguide b = line p1=(100,100) p2=(110,110)\nfill c = circle center=intersects a b 1 radius=1 color=red\n"
+    )
+    .is_err());
+    // unknown node
+    assert!(resolve_src(
+        "wvg 7 scene 10 10\nguide a = line p1=(0,0) p2=(10,10)\nfill c = circle center=intersects a ghost radius=1 color=red\n"
+    )
+    .is_err());
+    // 1-based k: k=0 rejects
+    assert!(resolve_src(
+        "wvg 7 scene 10 10\nguide a = line p1=(0,0) p2=(10,10)\nguide b = circle center=(5,5) radius=4\nfill c = circle center=intersects a b 0 radius=1 color=red\n"
     )
     .is_err());
 }

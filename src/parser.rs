@@ -474,7 +474,7 @@ impl Parser {
     fn parse_file(&mut self) -> Result<Document, Diag> {
         self.keyword("wvg")?;
         let version = self.integer()?;
-        if !(1..=6).contains(&version) {
+        if !(1..=7).contains(&version) {
             let t = self.toks[self.pos - 1].clone();
             return Err(Diag::new(
                 format!("unsupported format version {version}"),
@@ -1196,6 +1196,39 @@ impl Parser {
                     span,
                 })
             }
+            Tok::Ident(ref s) if s == "intersects" => {
+                let nt = self.next();
+                let a = match nt.tok {
+                    Tok::Ident(name) => name,
+                    _ => {
+                        return Err(Diag::new(
+                            format!("expected a node name, found {}", nt.describe()),
+                            nt.line,
+                            nt.col,
+                        ));
+                    }
+                };
+                let nt = self.next();
+                let b = match nt.tok {
+                    Tok::Ident(name) => name,
+                    _ => {
+                        return Err(Diag::new(
+                            format!("expected a node name, found {}", nt.describe()),
+                            nt.line,
+                            nt.col,
+                        ));
+                    }
+                };
+                let k = if self.peek_number() {
+                    self.integer_term()?
+                } else {
+                    1
+                };
+                Ok(PPoint {
+                    kind: PKind::Intersects { a, b, k },
+                    span,
+                })
+            }
             Tok::Ident(ref s) if s == "between" => {
                 let a = Box::new(self.parse_point()?);
                 let b = Box::new(self.parse_point()?);
@@ -1282,6 +1315,25 @@ impl Parser {
                     ry,
                     rotation_deg,
                 }
+            }
+            "arc_between" => {
+                self.keyword("p1")?;
+                eq(self)?;
+                let p1 = self.parse_point()?;
+                self.keyword("p2")?;
+                eq(self)?;
+                let p2 = self.parse_point()?;
+                self.keyword("deg")?;
+                eq(self)?;
+                let deg = self.number()?;
+                if deg == 0.0 || deg.abs() >= 360.0 {
+                    return Err(Diag::new(
+                        "arc_between sweep must be nonzero and within ±360",
+                        span.line,
+                        span.col,
+                    ));
+                }
+                SKind::ArcBetween { p1, p2, deg }
             }
             "arc" => {
                 self.keyword("center")?;

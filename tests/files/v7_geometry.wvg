@@ -1,0 +1,10 @@
+// v7 golden: arc_between connectors + intersects point form (§7.22/§7.23).
+// A rail crossing a hoop: markers at both crossings, two arc connectors.
+wvg 7 scene 220 160
+
+guide rail = line p1=(30,110) p2=(190,50)
+guide hoop = circle center=(110,80) radius=45
+fill hit1 = circle center=intersects rail hoop radius=4 color=#E53935
+fill hit2 = circle center=intersects rail hoop 2 radius=4 color=#43A047
+stroke deck = arc_between p1=(40,120) p2=(180,120) deg=90 color=#1E88E5 width=3
+stroke under = arc_between p1=(40,120) p2=(180,120) deg=-60 color=#FDD835 width=2

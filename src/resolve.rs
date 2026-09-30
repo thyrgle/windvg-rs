@@ -1161,6 +1161,22 @@ impl<'a> Env<'a> {
                 }
                 Ok(result)
             }
+            PKind::Intersects { a, b, k } => {
+                let ca = track_chain(self, a, p.span)?;
+                let cb = track_chain(self, b, p.span)?;
+                let crossings = chain_crossings(&ca, &cb);
+                if *k < 1 || (*k as usize) > crossings.len() {
+                    return Err(Diag::new(
+                        format!(
+                            "no intersection #{k} between `{a}` and `{b}` (found {})",
+                            crossings.len()
+                        ),
+                        p.span.line,
+                        p.span.col,
+                    ));
+                }
+                Ok(crossings[*k as usize - 1])
+            }
             PKind::Polar {
                 center,
                 radius,
@@ -1203,6 +1219,13 @@ impl<'a> Env<'a> {
         match &s.kind {
             SKind::GridGuide { .. } => Ok(vec![]),
             SKind::Text { .. } => Ok(vec![]),
+            SKind::ArcBetween { p1, p2, deg } => {
+                let p = self.resolve_point(p1)?;
+                let q = self.resolve_point(p2)?;
+                resolve_arc_between(p, q, *deg)
+                    .map_err(|e| Diag::new(e, s.span.line, s.span.col))
+                    .map(|arc| vec![arc])
+            }
             SKind::Circle { center, radius } => Ok(vec![RShape::Circle {
                 c: self.resolve_point(center)?,
                 r: *radius,
@@ -1613,6 +1636,78 @@ fn marker_polygons(shape: &RShape, marker: &Marker) -> Result<Vec<Vec<Pt>>, Stri
 }
 
 // ---- ops ---------------------------------------------------------------------
+
+/// Chain sampling of a node's first shape through the track protocol
+/// (spec §7.23): 257 points at `i · perimeter/256`.
+fn track_chain(env: &mut Env, node: &str, span: Span) -> Result<Vec<Pt>, Diag> {
+    let shape = env.first_shape(node, span)?;
+    let per = shape.perimeter();
+    let step = per / 256.0;
+    let mut out = Vec::with_capacity(257);
+    for i in 0..=256i32 {
+        let d = i as f64 * step;
+        let pt = shape
+            .point_at_distance(d)
+            .map_err(|e| Diag::new(e, span.line, span.col))?;
+        out.push(pt);
+    }
+    Ok(out)
+}
+
+/// Segment-pair crossings of two chains, in chain order (spec §7.23).
+fn chain_crossings(a: &[Pt], b: &[Pt]) -> Vec<Pt> {
+    let mut out = Vec::new();
+    for i in 0..a.len().saturating_sub(1) {
+        let a1 = a[i];
+        let a2 = a[i + 1];
+        let (d1x, d1y) = (a2.x - a1.x, a2.y - a1.y);
+        for j in 0..b.len().saturating_sub(1) {
+            let b1 = b[j];
+            let b2 = b[j + 1];
+            let (d2x, d2y) = (b2.x - b1.x, b2.y - b1.y);
+            let denom = d1x * d2y - d1y * d2x;
+            if denom.abs() < 1e-12 {
+                continue;
+            }
+            let (ex, ey) = (b1.x - a1.x, b1.y - a1.y);
+            let ta = (ex * d2y - ey * d2x) / denom;
+            let tb = (ex * d1y - ey * d1x) / denom;
+            if (-1e-9..=1.0 + 1e-9).contains(&ta) && (-1e-9..=1.0 + 1e-9).contains(&tb) {
+                out.push(Pt::new(a1.x + ta * d1x, a1.y + ta * d1y));
+            }
+        }
+    }
+    out
+}
+
+/// The circular arc from p to q subtending `deg` degrees (spec §7.22) —
+/// canonical computation shared by every host.
+fn resolve_arc_between(p: Pt, q: Pt, deg: f64) -> Result<RShape, String> {
+    let (dx, dy) = (q.x - p.x, q.y - p.y);
+    let c = (dx * dx + dy * dy).sqrt();
+    if c == 0.0 {
+        return Err("arc_between endpoints must differ".into());
+    }
+    if deg == 0.0 || deg.abs() >= 360.0 {
+        return Err("arc_between sweep must be nonzero and within ±360".into());
+    }
+    let half = (deg.abs()).to_radians() / 2.0;
+    let c2 = c / 2.0;
+    let r = c2 / half.sin();
+    let h = (r * r - c2 * c2).sqrt();
+    let (ux, uy) = (dx / c, dy / c);
+    let (nx, ny) = (-uy, ux);
+    let sign = if deg > 0.0 { 1.0 } else { -1.0 };
+    let cx = (p.x + q.x) / 2.0 + nx * h * sign;
+    let cy = (p.y + q.y) / 2.0 + ny * h * sign;
+    let a0 = (p.y - cy).atan2(p.x - cx).to_degrees();
+    Ok(RShape::Arc {
+        c: Pt::new(cx, cy),
+        r,
+        start_deg: a0,
+        sweep_deg: deg,
+    })
+}
 
 /// Displace [p] along the unit tangent (tx, ty) rotated [deg] degrees
 /// clockwise on screen, scaled by [len] (spec §7.20). Canonical op order:
