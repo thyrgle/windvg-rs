@@ -635,10 +635,11 @@ fill a = rect center=(50,50) size=(60, 30) transform=translate 100 -40 color=red
     match &ops[0].shape {
         windvg::resolve::RShape::Polygon(pts) => {
             // translated by (100, -40): center (150, 10)
-            let (lo, hi) = pts.iter().fold(
-                (f64::INFINITY, f64::NEG_INFINITY),
-                |(lo, hi), p| (lo.min(p.y), hi.max(p.y)),
-            );
+            let (lo, hi) = pts
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                    (lo.min(p.y), hi.max(p.y))
+                });
             assert!(((lo + hi) / 2.0 - 10.0).abs() < 1e-9, "y center {lo}..{hi}");
         }
         other => panic!("expected polygon, found {other:?}"),
@@ -704,23 +705,38 @@ repeat i = 4 {
 #[test]
 fn v6_errors() {
     // unknown constant
-    assert!(resolve_src("wvg 6 scene 10 10\nfill a = circle center=(1,1) radius=R color=red\n").is_err());
+    assert!(
+        resolve_src("wvg 6 scene 10 10\nfill a = circle center=(1,1) radius=R color=red\n")
+            .is_err()
+    );
     // duplicate constant
     assert!(resolve_src("wvg 6 scene 10 10\nlet a = 1\nlet a = 2\n").is_err());
     // division by zero
     assert!(resolve_src("wvg 6 scene 10 10\nlet a = 1 / 0\n").is_err());
     // non-integral repeat count
-    assert!(resolve_src("wvg 6 scene 10 10\nrepeat i = 2.5 { fill a = circle center=(1,1) radius=1 color=red }\n").is_err());
+    assert!(resolve_src(
+        "wvg 6 scene 10 10\nrepeat i = 2.5 { fill a = circle center=(1,1) radius=1 color=red }\n"
+    )
+    .is_err());
     // repeat count out of range
-    assert!(resolve_src("wvg 6 scene 10 10\nrepeat i = 0 { fill a = circle center=(1,1) radius=1 color=red }\n").is_err());
-    assert!(resolve_src("wvg 6 scene 10 10\nrepeat i = 1001 { fill a = circle center=(1,1) radius=1 color=red }\n").is_err());
+    assert!(resolve_src(
+        "wvg 6 scene 10 10\nrepeat i = 0 { fill a = circle center=(1,1) radius=1 color=red }\n"
+    )
+    .is_err());
+    assert!(resolve_src(
+        "wvg 6 scene 10 10\nrepeat i = 1001 { fill a = circle center=(1,1) radius=1 color=red }\n"
+    )
+    .is_err());
     // nested repeat
     assert!(resolve_src(
         "wvg 6 scene 10 10\nrepeat i = 2 { repeat j = 2 { fill a~ = circle center=(1,1) radius=1 color=red } }\n"
     )
     .is_err());
     // ~ outside a repeat
-    assert!(resolve_src("wvg 6 scene 10 10\nfill a~ = circle center=(1,1) radius=1 color=red\n").is_err());
+    assert!(
+        resolve_src("wvg 6 scene 10 10\nfill a~ = circle center=(1,1) radius=1 color=red\n")
+            .is_err()
+    );
     // non-integral segment index expression
     assert!(resolve_src(
         "wvg 6 scene 10 10\nstroke r = polygon points=[(0,0), (10,0), (10,10), (0,10)] color=red\nfill d = circle center=@r seg (5 / 2) radius=1 color=red\n"

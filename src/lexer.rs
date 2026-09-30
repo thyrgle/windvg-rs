@@ -283,9 +283,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diag> {
             }
             c if c == '_' || c == '~' || c.is_ascii_alphabetic() => {
                 let start = i;
-                while i < b.len()
-                    && (b[i] == '_' || b[i] == '~' || b[i].is_ascii_alphanumeric())
-                {
+                while i < b.len() && (b[i] == '_' || b[i] == '~' || b[i].is_ascii_alphanumeric()) {
                     i += 1;
                     col += 1;
                 }

@@ -387,7 +387,7 @@ def build_v6_consts():
     barcy = 160.0 - pad - barH / 2
     doc = Document(240.0, 160.0)
     doc.fill("back", wvd.RectSpec((cx, cy), W, H), _hex("F5F5F5"))
-    doc.fill("bar", wvd.RectSpec((barcx, barcy), barw, barH), _hex("1E88E5"))
+    doc.fill("plot", wvd.RectSpec((barcx, barcy), barw, barH), _hex("1E88E5"))
     doc.fill("cap", wv.Circle((barcx, barcy), 8.0), _hex("E53935"))
     doc.stroke("frame", wvd.RectSpec((cx, cy), W, H), _hex("333333"), 1.0)
     return doc

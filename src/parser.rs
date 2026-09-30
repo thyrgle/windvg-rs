@@ -212,10 +212,7 @@ impl Parser {
             Ok(v as i64)
         } else {
             Err(Diag::new(
-                format!(
-                    "expected an integer, found {}",
-                    t.describe()
-                ),
+                format!("expected an integer, found {}", t.describe()),
                 t.line,
                 t.col,
             ))
@@ -358,11 +355,7 @@ impl Parser {
             ));
         }
         if self.names.contains(&name) && !self.in_repeat {
-            return Err(Diag::new(
-                format!("duplicate name `{name}`"),
-                t.line,
-                t.col,
-            ));
+            return Err(Diag::new(format!("duplicate name `{name}`"), t.line, t.col));
         }
         self.expect("`=`", |t| *t == Tok::Eq)?;
         let value = self.expr()?;
@@ -952,11 +945,7 @@ impl Parser {
             }
             "scale" => {
                 let sx = num(self)?;
-                let sy = if self.peek_number() {
-                    num(self)?
-                } else {
-                    sx
-                };
+                let sy = if self.peek_number() { num(self)? } else { sx };
                 let (cx, cy) = maybe_about(self)?;
                 Ok([sx, 0.0, 0.0, sy, cx - sx * cx, cy - sy * cy])
             }
