@@ -98,6 +98,7 @@ fn point_json(p: &PPoint) -> String {
             pct,
             start,
             dir,
+            tangent,
             offset,
         } => {
             let mut s = format!("{{\"anchor\": {{\"node\": \"{node}\", \"pct\": {}", f(*pct));
@@ -106,6 +107,9 @@ fn point_json(p: &PPoint) -> String {
             }
             if *dir != Orientation::Cw {
                 s.push_str(&format!(", \"direction\": \"{}\"", dir.as_str()));
+            }
+            if let Some((len, deg)) = tangent {
+                s.push_str(&format!(", \"tangent\": {}", num_list((*len, *deg))));
             }
             if let Some((x, y)) = offset {
                 s.push_str(&format!(", \"offset\": {}", num_list((*x, *y))));
@@ -117,12 +121,16 @@ fn point_json(p: &PPoint) -> String {
             node,
             index,
             pct,
+            tangent,
             offset,
         } => {
             let mut s = format!(
                 "{{\"segment\": {{\"node\": \"{node}\", \"index\": {index}, \"pct\": {}",
                 f(*pct)
             );
+            if let Some((len, deg)) = tangent {
+                s.push_str(&format!(", \"tangent\": {}", num_list((*len, *deg))));
+            }
             if let Some((x, y)) = offset {
                 s.push_str(&format!(", \"offset\": {}", num_list((*x, *y))));
             }

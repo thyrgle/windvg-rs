@@ -326,7 +326,7 @@ fn v2_transforms_parse_and_version_two_is_accepted() {
     resolve_src("wvg 1\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     resolve_src("wvg 2\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     // future versions are rejected
-    assert!(resolve_src("wvg 5\nscene 10 10\n").is_err());
+    assert!(resolve_src("wvg 6\nscene 10 10\n").is_err());
 }
 
 #[test]
@@ -509,7 +509,8 @@ fill text = circle center=(10,10) radius=5 color=red
 #[test]
 fn v4_version_gates() {
     assert!(windvg::parser::parse("wvg 4 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 5 scene 10 10").is_err());
+    assert!(windvg::parser::parse("wvg 5 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 6 scene 10 10").is_err());
 }
 
 #[test]
@@ -528,4 +529,52 @@ group {
     assert_eq!(ops.len(), 1);
     assert!(windvg::tvg::encode(&ops, doc.width, doc.height, 4, false).is_err());
     assert!(windvg::tvg::encode(&ops, doc.width, doc.height, 4, true).is_ok());
+}
+
+// ---- v5: tangent offsets (spec §7.20) ----
+
+#[test]
+fn v5_tangent_resolves_all_four_directions() {
+    // cw circle at 0% = (160,100); travel = (0,1) (down)
+    let cases: &[(&str, (f64, f64))] = &[
+        ("tangent 20", (160.0, 120.0)),          // with travel
+        ("tangent 20 deg 90", (140.0, 100.0)),   // right-hand normal
+        ("tangent 20 deg 180", (160.0, 80.0)),   // reverse
+        ("tangent -20", (160.0, 80.0)),          // negative = reverse
+        ("tangent 20 deg 90 + (5, 0)", (145.0, 100.0)), // composes with offset
+    ];
+    for (clause, want) in cases {
+        let src = format!(
+            "wvg 5 scene 200 200\nstroke rim = circle center=(100,100) radius=60 color=red\nfill d = circle center=@rim {clause} radius=1 color=red\n"
+        );
+        let ops = resolve_src(&src).unwrap();
+        let (x, y) = match &ops.last().unwrap().shape {
+            windvg::resolve::RShape::Circle { c, .. } => (c.x, c.y),
+            other => panic!("expected circle, found {other:?}"),
+        };
+        assert!(
+            (x - want.0).abs() < 1e-9 && (y - want.1).abs() < 1e-9,
+            "`{clause}`: got ({x}, {y}), want {want:?}"
+        );
+    }
+}
+
+#[test]
+fn v5_segment_tangent_and_errors() {
+    let src = "wvg 5 scene 200 200\nstroke rail = polygon points=[(40,40), (140,40), (140,90)] color=red\nfill d = circle center=@rail seg 0 50% tangent 10 deg 90 radius=1 color=red\n";
+    let ops = resolve_src(src).unwrap();
+    let (x, y) = match &ops.last().unwrap().shape {
+        windvg::resolve::RShape::Circle { c, .. } => (c.x, c.y),
+        other => panic!("expected circle, found {other:?}"),
+    };
+    // travel is +x; right-hand normal is +y
+    assert!((x - 90.0).abs() < 1e-9 && (y - 50.0).abs() < 1e-9, "({x}, {y})");
+
+    // zero-length segment tangent is an error
+    let bad = "wvg 5 scene 200 200\nstroke rail = polygon points=[(40,40), (40,40), (80,40)] color=red\nfill d = circle center=@rail seg 0 50% tangent 10 radius=1 color=red\n";
+    assert!(resolve_src(bad).is_err());
+
+    // version gate: 5 accepted, 6 rejected
+    assert!(windvg::parser::parse("wvg 5 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 6 scene 10 10").is_err());
 }

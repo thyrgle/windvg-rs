@@ -1,0 +1,26 @@
+// v5 golden: tangent offsets (spec §7.20) — normals, travel tangents,
+// segment refs, ccw travel, composition with literal offsets.
+wvg 5 scene 220 200
+
+stroke rim = circle center=(80,100) radius=50 color=#000000 width=1
+stroke rail = polygon points=[(150,40), (200,40), (200,90)] color=#333333 width=1
+
+// normals across the rim at the cardinal points
+stroke tick0 = line p1=@rim 0% p2=@rim 0% tangent 16 deg 90 color=#E53935 width=2
+stroke tick25 = line p1=@rim 25% p2=@rim 25% tangent 16 deg 90 color=#E53935 width=2
+stroke tick50 = line p1=@rim 50% p2=@rim 50% tangent 16 deg 90 color=#E53935 width=2
+
+// travel-direction leader and a reverse (deg 180) stub
+stroke lead = line p1=@rim 75% p2=@rim 75% tangent 20 color=#1E88E5 width=2
+stroke back = line p1=@rim 75% p2=@rim 75% tangent 10 deg 180 color=#43A047 width=2
+
+// ccw travel flips the frame; negative length faces backward
+stroke ccwtick = line p1=@rim ccw 12.5% p2=@rim ccw 12.5% tangent 14 deg 90 color=#FDD835 width=2
+stroke ccwneg = line p1=@rim ccw 12.5% p2=@rim ccw 12.5% tangent -8 color=#8E24AA width=2
+
+// segment reference tangents on a polyline track
+stroke segnorm = line p1=@rail seg 0 50% p2=@rail seg 0 50% tangent 12 deg 90 color=#FB8C00 width=2
+stroke segtan = line p1=@rail seg 1 25% p2=@rail seg 1 25% tangent 10 color=#6D4C41 width=2
+
+// tangent + literal offset compose; anchored dot rides the displaced point
+fill knob = circle center=@rail seg 0 50% tangent 12 deg 90 + (2, -3) radius=3 color=#E53935

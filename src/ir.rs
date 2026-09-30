@@ -259,12 +259,14 @@ pub enum PKind {
         pct: f64,
         start: Option<(f64, f64)>,
         dir: Orientation,
+        tangent: Option<(f64, f64)>,
         offset: Option<(f64, f64)>,
     },
     Segment {
         node: String,
         index: i64,
         pct: f64,
+        tangent: Option<(f64, f64)>,
         offset: Option<(f64, f64)>,
     },
     Between {

@@ -39,6 +39,11 @@ fn golden_smoke_compound_gradient_generators() {
     run_case("smoke");
 }
 
+#[test]
+fn golden_v5_tangent_offsets() {
+    run_case("v5_tangent");
+}
+
 /// Text documents (tier B) conform via ops JSON + SVG, not .tvg bytes.
 #[test]
 fn golden_v4_text_svg_and_metadata() {

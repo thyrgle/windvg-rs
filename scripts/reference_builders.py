@@ -321,6 +321,62 @@ def build_v4_text():
     return doc
 
 
+# ---- v5_tangent.wvg: tangent offsets (spec §7.20) ----
+
+def build_v5_tangent():
+    doc = Document(220.0, 200.0)
+    doc.stroke("rim", wvd.CircleSpec((80.0, 100.0), 50.0), _hex("000000"), 1.0)
+    doc.stroke(
+        "rail",
+        wvd.PolySpec(closed=True, points=((150.0, 40.0), (200.0, 40.0), (200.0, 90.0))),
+        _hex("333333"), 1.0,
+    )
+    doc.stroke("tick0", wvd.PolySpec(closed=False, points=(
+        wvd.AnchorPoint(node="rim", pct=0.0),
+        wvd.AnchorPoint(node="rim", pct=0.0, tangent=(16.0, 90.0)),
+    )), _hex("E53935"), 2.0)
+    doc.stroke("tick25", wvd.PolySpec(closed=False, points=(
+        wvd.AnchorPoint(node="rim", pct=25.0),
+        wvd.AnchorPoint(node="rim", pct=25.0, tangent=(16.0, 90.0)),
+    )), _hex("E53935"), 2.0)
+    doc.stroke("tick50", wvd.PolySpec(closed=False, points=(
+        wvd.AnchorPoint(node="rim", pct=50.0),
+        wvd.AnchorPoint(node="rim", pct=50.0, tangent=(16.0, 90.0)),
+    )), _hex("E53935"), 2.0)
+    doc.stroke("lead", wvd.PolySpec(closed=False, points=(
+        wvd.AnchorPoint(node="rim", pct=75.0),
+        wvd.AnchorPoint(node="rim", pct=75.0, tangent=(20.0, 0.0)),
+    )), _hex("1E88E5"), 2.0)
+    doc.stroke("back", wvd.PolySpec(closed=False, points=(
+        wvd.AnchorPoint(node="rim", pct=75.0),
+        wvd.AnchorPoint(node="rim", pct=75.0, tangent=(10.0, 180.0)),
+    )), _hex("43A047"), 2.0)
+    doc.stroke("ccwtick", wvd.PolySpec(closed=False, points=(
+        wvd.AnchorPoint(node="rim", pct=12.5, direction=wvd.Orientation.CCW),
+        wvd.AnchorPoint(node="rim", pct=12.5, direction=wvd.Orientation.CCW,
+                        tangent=(14.0, 90.0)),
+    )), _hex("FDD835"), 2.0)
+    doc.stroke("ccwneg", wvd.PolySpec(closed=False, points=(
+        wvd.AnchorPoint(node="rim", pct=12.5, direction=wvd.Orientation.CCW),
+        wvd.AnchorPoint(node="rim", pct=12.5, direction=wvd.Orientation.CCW,
+                        tangent=(-8.0, 0.0)),
+    )), _hex("8E24AA"), 2.0)
+    doc.stroke("segnorm", wvd.PolySpec(closed=False, points=(
+        wvd.SegmentPoint(node="rail", index=0, pct=50.0),
+        wvd.SegmentPoint(node="rail", index=0, pct=50.0, tangent=(12.0, 90.0)),
+    )), _hex("FB8C00"), 2.0)
+    doc.stroke("segtan", wvd.PolySpec(closed=False, points=(
+        wvd.SegmentPoint(node="rail", index=1, pct=25.0),
+        wvd.SegmentPoint(node="rail", index=1, pct=25.0, tangent=(10.0, 0.0)),
+    )), _hex("6D4C41"), 2.0)
+    doc.fill("knob", wvd.CircleSpec(
+        wvd.SegmentPoint(node="rail", index=0, pct=50.0,
+                         tangent=(12.0, 90.0), offset=(2.0, -3.0)),
+        3.0,
+    ), _hex("E53935"))
+    return doc
+
+
 BUILDERS = {
     "smoke": build_smoke,
     "anchors": build_anchors,
@@ -336,4 +392,5 @@ BUILDERS = {
     "v3_defs": build_v3_defs,
     "v3_markers": build_v3_markers,
     "v4_text": build_v4_text,
+    "v5_tangent": build_v5_tangent,
 }

@@ -161,7 +161,7 @@ impl Parser {
     fn parse_file(&mut self) -> Result<Document, Diag> {
         self.keyword("wvg")?;
         let version = self.integer()?;
-        if !(1..=4).contains(&version) {
+        if !(1..=5).contains(&version) {
             let t = self.toks[self.pos - 1].clone();
             return Err(Diag::new(
                 format!("unsupported format version {version}"),
@@ -765,6 +765,22 @@ impl Parser {
 
     // ---- points ----------------------------------------------------------
 
+    /// `tangent NUMBER [deg NUMBER]` — local-frame offset (spec §7.20).
+    fn parse_tangent_off(&mut self) -> Result<Option<(f64, f64)>, Diag> {
+        if !self.peek_kw("tangent") {
+            return Ok(None);
+        }
+        self.keyword("tangent")?;
+        let len = self.number()?;
+        let deg = if self.peek_kw("deg") {
+            self.keyword("deg")?;
+            self.number()?
+        } else {
+            0.0
+        };
+        Ok(Some((len, deg)))
+    }
+
     fn parse_point(&mut self) -> Result<PPoint, Diag> {
         let t = self.next();
         let span = Span::new(t.line, t.col);
@@ -799,6 +815,7 @@ impl Parser {
                     } else {
                         0.0
                     };
+                    let tangent = self.parse_tangent_off()?;
                     let offset = if self.peek().tok == Tok::Plus {
                         self.next();
                         Some(self.literal()?.1)
@@ -810,6 +827,7 @@ impl Parser {
                             node,
                             index,
                             pct,
+                            tangent,
                             offset,
                         },
                         span,
@@ -853,6 +871,7 @@ impl Parser {
                     self.keyword("from")?;
                     start = Some(self.literal()?.1);
                 }
+                let tangent = self.parse_tangent_off()?;
                 let offset = if self.peek().tok == Tok::Plus {
                     self.next();
                     Some(self.literal()?.1)
@@ -865,6 +884,7 @@ impl Parser {
                         pct,
                         start,
                         dir,
+                        tangent,
                         offset,
                     },
                     span,

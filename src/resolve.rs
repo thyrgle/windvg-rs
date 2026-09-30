@@ -1071,6 +1071,7 @@ impl<'a> Env<'a> {
                 pct,
                 start,
                 dir,
+                tangent,
                 offset,
             } => {
                 let shape = self.first_shape(node, p.span)?;
@@ -1083,6 +1084,16 @@ impl<'a> Env<'a> {
                 let signed = dir.mult() * shape.winding_sign() as f64;
                 let delta = (pct / 100.0) * shape.perimeter() * signed;
                 let mut result = shape.point_at_distance(d0 + delta).map_err(wrap)?;
+                if let Some((len, deg)) = tangent {
+                    // unit tangent at the travel position, signed like the
+                    // Python Anchor.tangent (spec §7.20)
+                    let dist = (d0 + delta).rem_euclid(shape.perimeter());
+                    let t = shape
+                        .tangent_at_distance(dist)
+                        .map_err(wrap)?
+                        .mul(signed);
+                    result = apply_tangent(result, t.x, t.y, *len, *deg);
+                }
                 if let Some((dx, dy)) = offset {
                     result = Pt::new(result.x + dx, result.y + dy);
                 }
@@ -1092,6 +1103,7 @@ impl<'a> Env<'a> {
                 node,
                 index,
                 pct,
+                tangent,
                 offset,
             } => {
                 let shape = self.first_shape(node, p.span)?;
@@ -1125,6 +1137,18 @@ impl<'a> Env<'a> {
                 let b = pts[((*index as usize) + 1) % pts.len()];
                 let t = pct.clamp(0.0, 100.0) / 100.0;
                 let mut result = a.lerp(b, t);
+                if let Some((len, deg)) = tangent {
+                    let (dx, dy) = (b.x - a.x, b.y - a.y);
+                    let seg_len = (dx * dx + dy * dy).sqrt();
+                    if seg_len == 0.0 {
+                        return Err(Diag::new(
+                            format!("tangent undefined on zero-length segment of `{node}`"),
+                            p.span.line,
+                            p.span.col,
+                        ));
+                    }
+                    result = apply_tangent(result, dx / seg_len, dy / seg_len, *len, *deg);
+                }
                 if let Some((dx, dy)) = offset {
                     result = Pt::new(result.x + dx, result.y + dy);
                 }
@@ -1592,6 +1616,17 @@ fn marker_polygons(shape: &RShape, marker: &Marker) -> Result<Vec<Vec<Pt>>, Stri
 }
 
 // ---- ops ---------------------------------------------------------------------
+
+/// Displace [p] along the unit tangent (tx, ty) rotated [deg] degrees
+/// clockwise on screen, scaled by [len] (spec §7.20). Canonical op order:
+/// rotate the unit vector, scale, then add — mirrored by Python and Kotlin.
+pub fn apply_tangent(p: Pt, tx: f64, ty: f64, len: f64, deg: f64) -> Pt {
+    let rad = deg.to_radians();
+    let (ca, sa) = (rad.cos(), rad.sin());
+    let rx = tx * ca - ty * sa;
+    let ry = tx * sa + ty * ca;
+    Pt::new(p.x + rx * len, p.y + ry * len)
+}
 
 pub fn resolve_paint(p: &Paint) -> RPaint {
     match p {
