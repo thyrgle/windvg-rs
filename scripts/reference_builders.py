@@ -377,6 +377,44 @@ def build_v5_tangent():
     return doc
 
 
+# ---- v6 goldens: constants/expressions and bounded repeat ----
+
+def build_v6_consts():
+    W, H, pad, barH = 200.0, 90.0, 20.0, 24.0
+    cx, cy = 120.0, 80.0
+    barw = W - 2 * pad
+    barcx = pad + barw / 2
+    barcy = 160.0 - pad - barH / 2
+    doc = Document(240.0, 160.0)
+    doc.fill("back", wvd.RectSpec((cx, cy), W, H), _hex("F5F5F5"))
+    doc.fill("bar", wvd.RectSpec((barcx, barcy), barw, barH), _hex("1E88E5"))
+    doc.fill("cap", wv.Circle((barcx, barcy), 8.0), _hex("E53935"))
+    doc.stroke("frame", wvd.RectSpec((cx, cy), W, H), _hex("333333"), 1.0)
+    return doc
+
+
+def build_v6_repeat():
+    import math
+    teeth = 8
+    doc = Document(200.0, 200.0)
+    doc.fill("hub", wv.Circle((100.0, 100.0), 16.0), _hex("333333"))
+    doc.fill("rim", wv.Circle((100.0, 100.0), 60.0), wv.rgb(0, 0, 0), visible=False)
+    for i in range(1, teeth + 1):
+        deg = (i - 1) * 45.0
+        px = 100.0 + 60.0 * math.cos(math.radians(deg))
+        py = 100.0 + 60.0 * math.sin(math.radians(deg))
+        doc.fill(f"dot{i}", wv.Circle((px, py), 5.0), _hex("1E88E5"))
+        doc.stroke(
+            f"tick{i}",
+            wvd.PolySpec(closed=False, points=(
+                wvd.AnchorPoint(node="rim", pct=deg),
+                wvd.AnchorPoint(node="rim", pct=deg, tangent=(14.0, 90.0)),
+            )),
+            _hex("E53935"), 2.0,
+        )
+    return doc
+
+
 BUILDERS = {
     "smoke": build_smoke,
     "anchors": build_anchors,
@@ -393,4 +431,6 @@ BUILDERS = {
     "v3_markers": build_v3_markers,
     "v4_text": build_v4_text,
     "v5_tangent": build_v5_tangent,
+    "v6_consts": build_v6_consts,
+    "v6_repeat": build_v6_repeat,
 }

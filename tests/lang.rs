@@ -326,7 +326,7 @@ fn v2_transforms_parse_and_version_two_is_accepted() {
     resolve_src("wvg 1\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     resolve_src("wvg 2\nscene 10 10\n\nfill a = circle center=(0,0) radius=1 color=red\n").unwrap();
     // future versions are rejected
-    assert!(resolve_src("wvg 6\nscene 10 10\n").is_err());
+    assert!(resolve_src("wvg 7\nscene 10 10\n").is_err());
 }
 
 #[test]
@@ -510,7 +510,8 @@ fill text = circle center=(10,10) radius=5 color=red
 fn v4_version_gates() {
     assert!(windvg::parser::parse("wvg 4 scene 10 10").is_ok());
     assert!(windvg::parser::parse("wvg 5 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 6 scene 10 10").is_err());
+    assert!(windvg::parser::parse("wvg 6 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 7 scene 10 10").is_err());
 }
 
 #[test]
@@ -577,7 +578,159 @@ fn v5_segment_tangent_and_errors() {
     let bad = "wvg 5 scene 200 200\nstroke rail = polygon points=[(40,40), (40,40), (80,40)] color=red\nfill d = circle center=@rail seg 0 50% tangent 10 radius=1 color=red\n";
     assert!(resolve_src(bad).is_err());
 
-    // version gate: 5 accepted, 6 rejected
-    assert!(windvg::parser::parse("wvg 5 scene 10 10").is_ok());
-    assert!(windvg::parser::parse("wvg 6 scene 10 10").is_err());
+    // version gate: 6 accepted, 7 rejected
+    assert!(windvg::parser::parse("wvg 6 scene 10 10").is_ok());
+    assert!(windvg::parser::parse("wvg 7 scene 10 10").is_err());
+}
+
+// ---- v6: constants, expressions, repeat (spec §7.21) ----
+
+#[test]
+fn v6_constants_and_expressions() {
+    let src = "
+wvg 6
+scene 200 200
+
+let R = 60
+let cx = 100
+let cy = 40 + 2 * 30
+fill a = circle center=(cx, cy) radius=R color=red
+fill b = circle center=((cx + R), cy) radius=((R / 4) + 1) color=blue
+fill c = circle center=(cx, (cy + R + 10)) radius=-(-20) color=green
+";
+    let ops = resolve_src(src).unwrap();
+    assert_eq!(ops.len(), 3);
+    match &ops[0].shape {
+        windvg::resolve::RShape::Circle { c, r } => {
+            assert!((c.x - 100.0).abs() < 1e-9 && (c.y - 100.0).abs() < 1e-9);
+            assert!((r - 60.0).abs() < 1e-9);
+        }
+        other => panic!("expected circle, found {other:?}"),
+    }
+    match &ops[1].shape {
+        windvg::resolve::RShape::Circle { c, r } => {
+            assert!((c.x - 160.0).abs() < 1e-9);
+            assert!((r - 16.0).abs() < 1e-9);
+        }
+        other => panic!("expected circle, found {other:?}"),
+    }
+    match &ops[2].shape {
+        windvg::resolve::RShape::Circle { c, .. } => {
+            assert!((c.y - 170.0).abs() < 1e-9);
+        }
+        other => panic!("expected circle, found {other:?}"),
+    }
+}
+
+#[test]
+fn v6_positional_terms_and_precedence() {
+    // positional slots take a single term: `translate 100 -40` is two values
+    let src = "
+wvg 6
+scene 200 200
+
+fill a = rect center=(50,50) size=(60, 30) transform=translate 100 -40 color=red
+";
+    let ops = resolve_src(src).unwrap();
+    match &ops[0].shape {
+        windvg::resolve::RShape::Polygon(pts) => {
+            // translated by (100, -40): center (150, 10)
+            let (lo, hi) = pts.iter().fold(
+                (f64::INFINITY, f64::NEG_INFINITY),
+                |(lo, hi), p| (lo.min(p.y), hi.max(p.y)),
+            );
+            assert!(((lo + hi) / 2.0 - 10.0).abs() < 1e-9, "y center {lo}..{hi}");
+        }
+        other => panic!("expected polygon, found {other:?}"),
+    }
+}
+
+#[test]
+fn v6_repeat_expands_and_substitutes() {
+    let src = "
+wvg 6
+scene 220 120
+
+let teeth = 3
+guide rim = circle center=(60,60) radius=40
+repeat i = teeth {
+  fill dot~ = circle center=(i * 40, (20 + i * 10)) radius=4 color=blue
+}
+fill after = circle center=(180,100) radius=2 color=red
+";
+    let mut doc = windvg::parser::parse(src).unwrap();
+    windvg::parser::assign_ids(&mut doc);
+    assert_eq!(doc.nodes.len(), 5, "guide + 3 dots + after");
+    // names: dot1..dot3
+    let names: Vec<String> = doc.nodes.iter().map(|n| n.name.clone()).collect();
+    assert_eq!(names, vec!["rim", "dot1", "dot2", "dot3", "after"]);
+    let ops = windvg::resolve::resolve(&doc).unwrap();
+    match &ops[0].shape {
+        windvg::resolve::RShape::Circle { c, r } => {
+            assert!((c.x - 40.0).abs() < 1e-9 && (c.y - 30.0).abs() < 1e-9);
+            assert!((r - 4.0).abs() < 1e-9);
+        }
+        other => panic!("expected circle, found {other:?}"),
+    }
+    match &ops[2].shape {
+        windvg::resolve::RShape::Circle { c, .. } => {
+            assert!((c.x - 120.0).abs() < 1e-9 && (c.y - 50.0).abs() < 1e-9);
+        }
+        other => panic!("expected circle, found {other:?}"),
+    }
+}
+
+#[test]
+fn v6_repeat_index_in_names_and_refs() {
+    let src = "
+wvg 6
+scene 200 200
+
+fill base = circle center=(100,100) radius=80 color=#dddddd
+repeat i = 4 {
+  fill mark~ = circle center=@base i% radius=2 color=red
+  stroke ring~ = circle center=@mark~ 0% radius=6 color=red width=1
+}
+";
+    let ops = resolve_src(src).unwrap();
+    assert_eq!(ops.len(), 1 + 4 * 2);
+    let mut doc = windvg::parser::parse(src).unwrap();
+    windvg::parser::assign_ids(&mut doc);
+    let names: Vec<String> = doc.nodes.iter().map(|n| n.name.clone()).collect();
+    assert_eq!(names[1], "mark1");
+    assert_eq!(names[6], "ring3");
+}
+
+#[test]
+fn v6_errors() {
+    // unknown constant
+    assert!(resolve_src("wvg 6 scene 10 10\nfill a = circle center=(1,1) radius=R color=red\n").is_err());
+    // duplicate constant
+    assert!(resolve_src("wvg 6 scene 10 10\nlet a = 1\nlet a = 2\n").is_err());
+    // division by zero
+    assert!(resolve_src("wvg 6 scene 10 10\nlet a = 1 / 0\n").is_err());
+    // non-integral repeat count
+    assert!(resolve_src("wvg 6 scene 10 10\nrepeat i = 2.5 { fill a = circle center=(1,1) radius=1 color=red }\n").is_err());
+    // repeat count out of range
+    assert!(resolve_src("wvg 6 scene 10 10\nrepeat i = 0 { fill a = circle center=(1,1) radius=1 color=red }\n").is_err());
+    assert!(resolve_src("wvg 6 scene 10 10\nrepeat i = 1001 { fill a = circle center=(1,1) radius=1 color=red }\n").is_err());
+    // nested repeat
+    assert!(resolve_src(
+        "wvg 6 scene 10 10\nrepeat i = 2 { repeat j = 2 { fill a~ = circle center=(1,1) radius=1 color=red } }\n"
+    )
+    .is_err());
+    // ~ outside a repeat
+    assert!(resolve_src("wvg 6 scene 10 10\nfill a~ = circle center=(1,1) radius=1 color=red\n").is_err());
+    // non-integral segment index expression
+    assert!(resolve_src(
+        "wvg 6 scene 10 10\nstroke r = polygon points=[(0,0), (10,0), (10,10), (0,10)] color=red\nfill d = circle center=@r seg (5 / 2) radius=1 color=red\n"
+    )
+    .is_err());
+    // constant name is reserved
+    assert!(resolve_src("wvg 6 scene 10 10\nlet fill = 1\n").is_err());
+    // constants share the namespace with nodes
+    assert!(resolve_src(
+        "wvg 6 scene 10 10\nlet a = 1\nfill a = circle center=(1,1) radius=1 color=red\n"
+    )
+    .is_err());
 }

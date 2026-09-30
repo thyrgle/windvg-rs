@@ -13,12 +13,23 @@ pub fn parse(src: &str) -> Result<Document, Diag> {
     Parser::new(toks).parse_file()
 }
 
+fn tok_describe(t: &Tok) -> String {
+    Token {
+        tok: t.clone(),
+        line: 0,
+        col: 0,
+    }
+    .describe()
+}
+
 struct Parser {
     toks: Vec<Token>,
     pos: usize,
     paints: HashMap<String, Paint>,
     names: HashSet<String>,
     defs: HashMap<String, PShape>,
+    constants: HashMap<String, f64>,
+    in_repeat: bool,
 }
 
 impl Parser {
@@ -29,6 +40,8 @@ impl Parser {
             paints: HashMap::new(),
             names: HashSet::new(),
             defs: HashMap::new(),
+            constants: HashMap::new(),
+            in_repeat: false,
         }
     }
 
@@ -78,12 +91,114 @@ impl Parser {
         matches!(&self.peek().tok, Tok::Ident(s) if s == kw)
     }
 
+    /// True where a NUMBER may begin: a literal or a unary sign (the sign
+    /// is an operator, so `-50%` and `-3` must pass this gate).
+    fn peek_number(&self) -> bool {
+        matches!(
+            self.peek().tok,
+            Tok::Num(_) | Tok::Minus | Tok::Plus | Tok::LP
+        )
+    }
+
+    /// Any NUMBER position: a closed-form expression over literals and
+    /// constants (spec §7.21). Signs are unary operators.
     fn number(&mut self) -> Result<f64, Diag> {
+        self.expr()
+    }
+
+    fn expr(&mut self) -> Result<f64, Diag> {
+        let mut v = self.number_term()?;
+        loop {
+            match self.peek().tok {
+                Tok::Plus => {
+                    self.next();
+                    v += self.number_term()?;
+                }
+                Tok::Minus => {
+                    self.next();
+                    v -= self.number_term()?;
+                }
+                _ => return Ok(v),
+            }
+        }
+    }
+
+    /// A POSITIONAL number — one separated from its neighbors by spaces or
+    /// punctuation (`(x, y)`, `50%`, `tangent 12 deg 90`, `translate 5 -3`,
+    /// `seg 0 -50%`). Binary `+`/`-` would be ambiguous there (an adjacent
+    /// value or a point offset), so positional slots accept a single *term*:
+    /// literals, constants, unary signs, `*`/`/`, and parentheses for
+    /// arithmetic. Only `key = expr` slots parse full expressions.
+    fn number_term(&mut self) -> Result<f64, Diag> {
+        self.term()
+    }
+
+    /// Positional integer (segment index): a single term, integral.
+    fn integer_term(&mut self) -> Result<i64, Diag> {
+        let t = self.peek().clone();
+        let v = self.term()?;
+        if v.fract() == 0.0 && v.abs() <= 9.0e15 {
+            Ok(v as i64)
+        } else {
+            Err(Diag::new(
+                format!("expected an integer, found {}", t.describe()),
+                t.line,
+                t.col,
+            ))
+        }
+    }
+
+    fn term(&mut self) -> Result<f64, Diag> {
+        let mut v = self.factor()?;
+        loop {
+            match self.peek().tok {
+                Tok::Star => {
+                    self.next();
+                    v *= self.factor()?;
+                }
+                Tok::Slash => {
+                    self.next();
+                    let d = self.factor()?;
+                    if d == 0.0 {
+                        let t = self.peek().clone();
+                        return Err(Diag::new("division by zero", t.line, t.col));
+                    }
+                    v /= d;
+                }
+                _ => return Ok(v),
+            }
+        }
+    }
+
+    fn factor(&mut self) -> Result<f64, Diag> {
         let t = self.next();
         match t.tok {
-            Tok::Num(v) => Ok(v),
-            _ => Err(Diag::new(
-                format!("expected a number, found {}", t.describe()),
+            Tok::Num(v) => {
+                if v.is_finite() {
+                    Ok(v)
+                } else {
+                    Err(Diag::new("number out of range", t.line, t.col))
+                }
+            }
+            Tok::Ident(name) => match self.constants.get(&name) {
+                Some(v) => Ok(*v),
+                None => Err(Diag::new(
+                    format!(
+                        "unknown constant `{name}` (constants must be declared with `let` before use)"
+                    ),
+                    t.line,
+                    t.col,
+                )),
+            },
+            Tok::LP => {
+                let v = self.expr()?;
+                self.expect("`)`", |t| *t == Tok::RP)?;
+                Ok(v)
+            }
+            Tok::Minus => Ok(-self.factor()?),
+            Tok::Plus => self.factor(),
+            other => Err(Diag::new(
+                format!("expected a number, found {}", Token { tok: other, line: t.line, col: t.col }.describe()),
                 t.line,
                 t.col,
             )),
@@ -91,20 +206,25 @@ impl Parser {
     }
 
     fn integer(&mut self) -> Result<i64, Diag> {
-        let t = self.next();
-        match t.tok {
-            Tok::Num(v) if v.fract() == 0.0 && v.abs() <= 9.0e15 => Ok(v as i64),
-            _ => Err(Diag::new(
-                format!("expected an integer, found {}", t.describe()),
+        let t = self.peek().clone();
+        let v = self.number()?;
+        if v.fract() == 0.0 && v.abs() <= 9.0e15 {
+            Ok(v as i64)
+        } else {
+            Err(Diag::new(
+                format!(
+                    "expected an integer, found {}",
+                    t.describe()
+                ),
                 t.line,
                 t.col,
-            )),
+            ))
         }
     }
 
     /// `NUMBER "%"`.
     fn percent(&mut self) -> Result<f64, Diag> {
-        let v = self.number()?;
+        let v = self.number_term()?;
         let t = self.next();
         if t.tok == Tok::Percent {
             Ok(v)
@@ -119,9 +239,9 @@ impl Parser {
 
     fn literal(&mut self) -> Result<(PPoint, (f64, f64)), Diag> {
         let t = self.expect("`(`", |t| *t == Tok::LP)?;
-        let x = self.number()?;
+        let x = self.number_term()?;
         self.expect("`,`", |t| *t == Tok::Comma)?;
-        let y = self.number()?;
+        let y = self.number_term()?;
         self.expect("`)`", |t| *t == Tok::RP)?;
         let pt = PPoint {
             kind: PKind::Literal(x, y),
@@ -149,6 +269,13 @@ impl Parser {
                 t.col,
             ));
         }
+        if name.contains('~') && !self.in_repeat {
+            return Err(Diag::new(
+                "`~` in a name is only valid inside a repeat body".to_string(),
+                t.line,
+                t.col,
+            ));
+        }
         if self.names.contains(&name) {
             return Err(Diag::new(format!("duplicate name `{name}`"), t.line, t.col));
         }
@@ -158,10 +285,203 @@ impl Parser {
 
     // ---- top level ------------------------------------------------------
 
+    /// One top-level statement. Returns Ok(false) at the end of input.
+    fn parse_top_into(&mut self, nodes: &mut Vec<Node>) -> Result<bool, Diag> {
+        match &self.peek().tok {
+            Tok::Eof => Ok(false),
+            Tok::Ident(s) => match s.as_str() {
+                "paint" => {
+                    self.parse_paint_decl()?;
+                    Ok(true)
+                }
+                "let" => {
+                    self.parse_let()?;
+                    Ok(true)
+                }
+                "repeat" => {
+                    self.parse_repeat(nodes)?;
+                    Ok(true)
+                }
+                "fill" | "stroke" | "outline_fill" => {
+                    nodes.push(self.parse_node()?);
+                    Ok(true)
+                }
+                "text" => {
+                    nodes.push(self.parse_text_node()?);
+                    Ok(true)
+                }
+                "guide" => {
+                    nodes.push(self.parse_guide()?);
+                    Ok(true)
+                }
+                "group" => {
+                    self.parse_group(nodes)?;
+                    Ok(true)
+                }
+                "def" => {
+                    self.parse_def()?;
+                    Ok(true)
+                }
+                "scene" => Err(self.err_here("duplicate scene declaration")),
+                _ => Err(self.err_here("expected a statement")),
+            },
+            _ => Err(self.err_here("expected a statement")),
+        }
+    }
+
+    /// `let name = expr` — a named numeric constant (spec §7.21).
+    fn parse_let(&mut self) -> Result<(), Diag> {
+        self.keyword("let")?;
+        let t = self.next();
+        let name = match &t.tok {
+            Tok::Ident(s) => s.clone(),
+            other => {
+                return Err(Diag::new(
+                    format!("expected a name, found {}", tok_describe(other)),
+                    t.line,
+                    t.col,
+                ));
+            }
+        };
+        if is_reserved(&name) {
+            return Err(Diag::new(
+                format!("`{name}` is a reserved word and cannot be a constant name"),
+                t.line,
+                t.col,
+            ));
+        }
+        if name.contains('~') {
+            return Err(Diag::new(
+                "`~` in a name is only valid inside a repeat body".to_string(),
+                t.line,
+                t.col,
+            ));
+        }
+        if self.names.contains(&name) && !self.in_repeat {
+            return Err(Diag::new(
+                format!("duplicate name `{name}`"),
+                t.line,
+                t.col,
+            ));
+        }
+        self.expect("`=`", |t| *t == Tok::Eq)?;
+        let value = self.expr()?;
+        self.constants.insert(name.clone(), value);
+        self.names.insert(name);
+        Ok(())
+    }
+
+    /// `repeat i = n { top* }` — parse-time expansion, one body parse per
+    /// iteration with the index substituted into numbers and `~` names.
+    fn parse_repeat(&mut self, nodes: &mut Vec<Node>) -> Result<(), Diag> {
+        if self.in_repeat {
+            return Err(self.err_here("nested repeat is not supported"));
+        }
+        self.keyword("repeat")?;
+        let t = self.next();
+        let index = match &t.tok {
+            Tok::Ident(s) if !s.contains('~') => s.clone(),
+            Tok::Ident(_) => {
+                return Err(Diag::new(
+                    "`~` is not allowed in the repeat index name".to_string(),
+                    t.line,
+                    t.col,
+                ));
+            }
+            other => {
+                return Err(Diag::new(
+                    format!("expected a name, found {}", tok_describe(other)),
+                    t.line,
+                    t.col,
+                ));
+            }
+        };
+        if is_reserved(&index) {
+            return Err(Diag::new(
+                format!("`{index}` is a reserved word and cannot be the repeat index"),
+                t.line,
+                t.col,
+            ));
+        }
+        self.expect("`=`", |t| *t == Tok::Eq)?;
+        let count = self.expr()?;
+        if count.fract() != 0.0 {
+            return Err(self.err_here("repeat count must be an integer"));
+        }
+        if !(1.0..=1000.0).contains(&count) {
+            return Err(self.err_here("repeat count must be between 1 and 1000"));
+        }
+        self.expect("`{`", |t| *t == Tok::LC)?;
+        let start = self.pos;
+        let mut depth = 1usize;
+        let mut end = start;
+        while end < self.toks.len() {
+            match self.toks[end].tok {
+                Tok::LC => depth += 1,
+                Tok::RC => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                Tok::Eof => break,
+                _ => {}
+            }
+            end += 1;
+        }
+        if depth != 0 {
+            return Err(self.err_here("unterminated repeat"));
+        }
+        let body: Vec<Token> = self.toks[start..end].to_vec();
+        self.pos = end + 1;
+
+        let saved_toks = std::mem::take(&mut self.toks);
+        let saved_pos = self.pos;
+        self.in_repeat = true;
+        for k in 1..=(count as usize) {
+            let ks = k.to_string();
+            let mut sub: Vec<Token> = Vec::with_capacity(body.len() + 1);
+            for tok in &body {
+                match &tok.tok {
+                    Tok::Ident(name) => {
+                        if name.contains('~') {
+                            sub.push(Token {
+                                tok: Tok::Ident(name.replace('~', &ks)),
+                                line: tok.line,
+                                col: tok.col,
+                            });
+                        } else if *name == index {
+                            sub.push(Token {
+                                tok: Tok::Num(k as f64),
+                                line: tok.line,
+                                col: tok.col,
+                            });
+                        } else {
+                            sub.push(tok.clone());
+                        }
+                    }
+                    _ => sub.push(tok.clone()),
+                }
+            }
+            sub.push(Token {
+                tok: Tok::Eof,
+                line: 0,
+                col: 0,
+            });
+            self.toks = sub;
+            self.pos = 0;
+            while self.parse_top_into(nodes)? {}
+        }
+        self.in_repeat = false;
+        self.toks = saved_toks;
+        self.pos = saved_pos;
+        Ok(())
+    }
+
     fn parse_file(&mut self) -> Result<Document, Diag> {
         self.keyword("wvg")?;
         let version = self.integer()?;
-        if !(1..=5).contains(&version) {
+        if !(1..=6).contains(&version) {
             let t = self.toks[self.pos - 1].clone();
             return Err(Diag::new(
                 format!("unsupported format version {version}"),
@@ -182,22 +502,7 @@ impl Parser {
         }
 
         let mut nodes: Vec<Node> = Vec::new();
-        loop {
-            match &self.peek().tok {
-                Tok::Eof => break,
-                Tok::Ident(s) => match s.as_str() {
-                    "paint" => self.parse_paint_decl()?,
-                    "fill" | "stroke" | "outline_fill" => nodes.push(self.parse_node()?),
-                    "text" => nodes.push(self.parse_text_node()?),
-                    "guide" => nodes.push(self.parse_guide()?),
-                    "group" => self.parse_group(&mut nodes)?,
-                    "def" => self.parse_def()?,
-                    "scene" => return Err(self.err_here("duplicate scene declaration")),
-                    _ => return Err(self.err_here("expected a statement")),
-                },
-                _ => return Err(self.err_here("expected a statement")),
-            }
-        }
+        while self.parse_top_into(&mut nodes)? {}
         Ok(Document {
             width,
             height,
@@ -565,19 +870,11 @@ impl Parser {
         let identity = group_t == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
         let mut inner: Vec<Node> = Vec::new();
         loop {
-            match &self.peek().tok {
-                Tok::RC => break,
-                Tok::Eof => return Err(self.err_here("unterminated group")),
-                Tok::Ident(s) => match s.as_str() {
-                    "paint" => self.parse_paint_decl()?,
-                    "fill" | "stroke" | "outline_fill" => inner.push(self.parse_node()?),
-                    "text" => inner.push(self.parse_text_node()?),
-                    "guide" => inner.push(self.parse_guide()?),
-                    "group" => self.parse_group(&mut inner)?,
-                    "scene" => return Err(self.err_here("duplicate scene declaration")),
-                    _ => return Err(self.err_here("expected a statement")),
-                },
-                _ => return Err(self.err_here("expected a statement")),
+            if matches!(self.peek().tok, Tok::RC) {
+                break;
+            }
+            if !self.parse_top_into(&mut inner)? {
+                return Err(self.err_here("unterminated group"));
             }
         }
         self.expect("`}`", |t| *t == Tok::RC)?;
@@ -622,7 +919,8 @@ impl Parser {
                 ))
             }
         };
-        let num = |p: &mut Self| p.number();
+        // positional slots: single terms (see number_term)
+        let num = |p: &mut Self| p.number_term();
         let maybe_about = |p: &mut Self| -> Result<(f64, f64), Diag> {
             if p.peek_kw("about") {
                 p.keyword("about")?;
@@ -654,7 +952,7 @@ impl Parser {
             }
             "scale" => {
                 let sx = num(self)?;
-                let sy = if matches!(self.peek().tok, Tok::Num(_)) {
+                let sy = if self.peek_number() {
                     num(self)?
                 } else {
                     sx
@@ -771,10 +1069,10 @@ impl Parser {
             return Ok(None);
         }
         self.keyword("tangent")?;
-        let len = self.number()?;
+        let len = self.number_term()?;
         let deg = if self.peek_kw("deg") {
             self.keyword("deg")?;
-            self.number()?
+            self.number_term()?
         } else {
             0.0
         };
@@ -786,9 +1084,9 @@ impl Parser {
         let span = Span::new(t.line, t.col);
         match t.tok {
             Tok::LP => {
-                let x = self.number()?;
+                let x = self.number_term()?;
                 self.expect("`,`", |t| *t == Tok::Comma)?;
-                let y = self.number()?;
+                let y = self.number_term()?;
                 self.expect("`)`", |t| *t == Tok::RP)?;
                 Ok(PPoint {
                     kind: PKind::Literal(x, y),
@@ -809,8 +1107,8 @@ impl Parser {
                 };
                 if self.peek_kw("seg") {
                     self.keyword("seg")?;
-                    let index = self.integer()?;
-                    let pct = if matches!(self.peek().tok, Tok::Num(_)) {
+                    let index = self.integer_term()?;
+                    let pct = if self.peek_number() {
                         self.percent()?
                     } else {
                         0.0
@@ -863,7 +1161,7 @@ impl Parser {
                     dir = Orientation::Ccw;
                 }
                 let mut pct = 0.0;
-                if matches!(self.peek().tok, Tok::Num(_)) {
+                if self.peek_number() {
                     pct = self.percent()?;
                 }
                 let mut start = None;

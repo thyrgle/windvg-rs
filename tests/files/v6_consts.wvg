@@ -1,0 +1,13 @@
+// v6 golden: named constants and arithmetic expressions (spec §7.21).
+// A bar chart frame: every dimension derives from four constants.
+wvg 6 scene 240 160
+
+let W = 200
+let H = 90
+let pad = 20
+let barH = 24
+
+fill back = rect center=(120, 80) size=(W, H) color=#F5F5F5
+fill bar = rect center=((pad + (W - 2 * pad) / 2), (160 - pad - barH / 2)) size=((W - 2 * pad), barH) color=#1E88E5
+fill cap = circle center=((pad + (W - 2 * pad) / 2), (160 - pad - barH / 2)) radius=8 color=#E53935
+stroke frame = rect center=(120, 80) size=(W, H) color=#333333 width=1

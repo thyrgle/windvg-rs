@@ -21,6 +21,9 @@ pub enum Tok {
     At,
     Percent,
     Plus,
+    Minus,
+    Star,
+    Slash,
     Eof,
 }
 
@@ -49,6 +52,9 @@ impl Token {
             Tok::At => "`@`".into(),
             Tok::Percent => "`%`".into(),
             Tok::Plus => "`+`".into(),
+            Tok::Minus => "`-`".into(),
+            Tok::Star => "`*`".into(),
+            Tok::Slash => "`/`".into(),
             Tok::Eof => "end of file".into(),
         }
     }
@@ -87,6 +93,16 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diag> {
                 while i < b.len() && b[i] != '\n' {
                     i += 1;
                 }
+            }
+            '/' => {
+                push!(Tok::Slash);
+                i += 1;
+                col += 1;
+            }
+            '*' => {
+                push!(Tok::Star);
+                i += 1;
+                col += 1;
             }
             '(' => {
                 push!(Tok::LP);
@@ -138,28 +154,19 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diag> {
                 i += 1;
                 col += 1;
             }
-            '+' if !starts_number(&b, i) => {
+            '+' => {
                 push!(Tok::Plus);
                 i += 1;
                 col += 1;
             }
-            '+' | '-' | '0'..='9' | '.' => {
-                if c == '-' && !starts_number(&b, i) {
-                    return Err(Diag::new(
-                        "unexpected '-'; numbers carry their own sign",
-                        line,
-                        col,
-                    ));
-                }
-                if c == '+' && !starts_number(&b, i) {
-                    unreachable!();
-                }
+            '-' => {
+                push!(Tok::Minus);
+                i += 1;
+                col += 1;
+            }
+            '0'..='9' | '.' => {
                 let start = i;
                 let start_col = col;
-                if c == '+' || c == '-' {
-                    i += 1;
-                    col += 1;
-                }
                 let mut got_digit = false;
                 while i < b.len() && b[i].is_ascii_digit() {
                     i += 1;
@@ -274,9 +281,11 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diag> {
                 }
                 push!(Tok::Str(text));
             }
-            c if c == '_' || c.is_ascii_alphabetic() => {
+            c if c == '_' || c == '~' || c.is_ascii_alphabetic() => {
                 let start = i;
-                while i < b.len() && (b[i] == '_' || b[i].is_ascii_alphanumeric()) {
+                while i < b.len()
+                    && (b[i] == '_' || b[i] == '~' || b[i].is_ascii_alphanumeric())
+                {
                     i += 1;
                     col += 1;
                 }
@@ -298,16 +307,4 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diag> {
         col,
     });
     Ok(out)
-}
-
-fn starts_number(b: &[char], i: usize) -> bool {
-    let next = b.get(i + 1);
-    match b[i] {
-        '-' | '+' => match next {
-            Some(c) if c.is_ascii_digit() => true,
-            Some('.') => b.get(i + 2).is_some_and(|c| c.is_ascii_digit()),
-            _ => false,
-        },
-        _ => true,
-    }
 }

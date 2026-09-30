@@ -1,0 +1,11 @@
+// v6 golden: bounded repeat with index substitution (spec §7.21).
+// Eight spokes: dots on the rim plus normal ticks, all named per iteration.
+wvg 6 scene 200 200
+
+let teeth = 8
+fill hub = circle center=(100,100) radius=16 color=#333333
+guide rim = circle center=(100,100) radius=60
+repeat i = teeth {
+  fill dot~ = circle center=polar center=(100,100) radius=60 deg=((i - 1) * 45) radius=5 color=#1E88E5
+  stroke tick~ = line p1=@rim ((i - 1) * 45)% p2=@rim ((i - 1) * 45)% tangent 14 deg 90 color=#E53935 width=2
+}
