@@ -314,9 +314,9 @@ fn v2_transforms_parse_and_version_two_is_accepted() {
     let ops = resolve_src(src).unwrap();
     match &ops[0].shape {
         RShape::Circle { c, .. } => {
-            // (0,0) rotated 45° about (5,5) lands at (2.07, 2.07)
+            // (0,0) rotated 45° cw-on-screen about (5,5) lands at (5, −2.07)
             assert!(
-                (c.x - 2.071).abs() < 1e-2 && (c.y - 2.071).abs() < 1e-2,
+                (c.x - 5.0).abs() < 1e-2 && (c.y + 2.071).abs() < 1e-2,
                 "{c:?}"
             );
         }
