@@ -266,6 +266,18 @@ impl Parser {
         Ok(None)
     }
 
+    /// Shape keywords may open an anonymous node; any other reserved word
+    /// after `fill`/`stroke`/… is a naming mistake worth naming clearly.
+    fn is_shape_keyword(kw: &str) -> bool {
+        matches!(
+            kw,
+            "circle" | "ellipse" | "arc" | "arc_between" | "rect" | "line"
+                | "polygon" | "polyline" | "path" | "compound" | "along"
+                | "polar" | "grid" | "regular_polygon" | "star" | "rounded"
+                | "pie" | "chord" | "use"
+        )
+    }
+
     /// Deterministic generated name for an anonymous node: shape keyword +
     /// per-keyword counter, sharing the document name space (spec §5.5).
     fn auto_name(&mut self, base: &str) -> String {
@@ -799,6 +811,15 @@ impl Parser {
             Tok::Ident(s) => s.clone(),
             _ => "node".to_string(),
         };
+        if is_reserved(&shape_kw) && !Self::is_shape_keyword(&shape_kw) {
+            return Err(Diag::new(
+                format!(
+                    "`{shape_kw}` is a reserved word and cannot be a node name"
+                ),
+                name_span.line,
+                name_span.col,
+            ));
+        }
         let mut shape = self.parse_shape()?;
         let name = match explicit {
             Some((n, _)) => n,
